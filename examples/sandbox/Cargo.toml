@@ -1,0 +1,9 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+runa-render = { path = "../../crates/runa-render" }
+winit = "0.29"
+pollster = "0.3"
