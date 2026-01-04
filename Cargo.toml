@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "crates/runa-core",
+    "crates/runa-render",
+    "crates/runa-asset",
+    "crates/runa-math",
+    "crates/runa-editor",
+    "examples/sandbox",
+]
+
+resolver = "2"

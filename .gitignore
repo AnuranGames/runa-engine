@@ -1,0 +1,50 @@
+# === Rust ===
+/target/
+**/*.rs.bk
+
+# === Cargo ===
+# НЕ игнорируем Cargo.lock — он нужен для workspace с бинарниками!
+
+# === IDE / редакторы ===
+# Zed (ты используешь его)
+.zed/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ / RustRover / CLion
+.idea/
+
+# Emacs, Vim и др.
+**/*.elc
+**/.dir-locals.el
+**/*.sw[po]
+
+# === ОС ===
+.DS_Store       # macOS
+Thumbs.db       # Windows
+Desktop.ini     # Windows
+
+# === Логи и временные файлы ===
+*.log
+*.tmp
+*.bak
+**/debug/
+**/release/
+
+# === Сборки FFmpeg, C-библиотек и т.п. (если используешь) ===
+/build/
+/deps/
+*.a
+*.so
+*.dylib
+*.dll
+
+# === Конфиги (локальные) ===
+.env
+.env.local
+*.env
