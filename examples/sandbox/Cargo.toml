@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 runa-render = { path = "../../crates/runa-render" }
+runa-asset = {path = "../../crates/runa-asset"}
 winit = "0.29"
 pollster = "0.3"
+glam = "0.30.9"

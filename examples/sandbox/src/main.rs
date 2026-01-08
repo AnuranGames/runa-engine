@@ -1,5 +1,14 @@
+use pollster::block_on;
+use winit::{
+    event::*,
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
+
 use runa_render::{RenderSettings, Renderer};
-use winit::{event::*, event_loop::EventLoop, window::WindowBuilder};
+
+use glam::Mat4;
+use runa_asset::handle::Handle;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new().unwrap();
@@ -12,7 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Создаём renderer, НО не захватываем window в closure
     let renderer = pollster::block_on(Renderer::new(&window, RenderSettings::default()));
 
-    // Теперь window больше не заимствован — можно move
     let window_id = window.id(); // сохраняем ID
     event_loop.run(move |event, elwt| match event {
         Event::WindowEvent {

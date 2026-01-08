@@ -5,6 +5,7 @@ members = [
     "crates/runa-asset",
     "crates/runa-math",
     "crates/runa-editor",
+    "crates/runa-render-api",
     "examples/sandbox",
 ]
 
