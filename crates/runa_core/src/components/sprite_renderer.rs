@@ -7,8 +7,13 @@ pub struct SpriteRenderer {
 }
 
 impl SpriteRenderer {
-    pub fn new() -> Self {
+    /// texture = None
+    pub fn default() -> Self {
         Self { texture: None }
+    }
+
+    pub fn get_texture_handle(&self) -> Handle<TextureAsset> {
+        self.texture.clone().unwrap()
     }
 }
 

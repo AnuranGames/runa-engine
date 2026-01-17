@@ -1,6 +1,5 @@
-use glam::Mat4;
-
 use crate::command::RenderCommands;
+use glam::Vec2;
 use runa_asset::{handle::Handle, texture::TextureAsset};
 
 pub struct RenderQueue {
@@ -14,9 +13,19 @@ impl RenderQueue {
         }
     }
 
-    pub fn draw_sprite(&mut self, texture: Handle<TextureAsset>, model: Mat4) {
-        self.commands
-            .push(RenderCommands::Sprite { texture, model });
+    pub fn draw_sprite(
+        &mut self,
+        texture: Handle<TextureAsset>,
+        position: Vec2,
+        rotation: f32,
+        scale: Vec2,
+    ) {
+        self.commands.push(RenderCommands::Sprite {
+            texture,
+            position,
+            rotation,
+            scale,
+        });
     }
 
     pub fn clear(&mut self) {

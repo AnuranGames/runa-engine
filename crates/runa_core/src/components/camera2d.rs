@@ -31,8 +31,7 @@ impl Camera2D {
         let bottom = -half_h;
         let top = half_h;
 
-        // Орто проекция
-        let proj = Mat4::orthographic_rh(left, right, bottom, top, -1.0, 1.0);
+        let proj = Mat4::orthographic_lh(left, right, bottom, top, -1.0, 1.0);
 
         // View: смещаем мир относительно камеры
         let view = Mat4::from_translation((-self.position).extend(0.0));

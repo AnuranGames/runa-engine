@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 pub struct Object {
     components: HashMap<TypeId, Box<dyn Any>>,
-    script: Option<Box<dyn Script>>,
+    pub script: Option<Box<dyn Script>>,
 }
 
 impl Object {
@@ -16,14 +16,14 @@ impl Object {
     }
 
     /// Adding component to object. Only one per object!
-    pub fn add_component<T: 'static>(&mut self, component: T) -> &mut T {
+    pub fn add_component<T: 'static>(&mut self, component: T) -> &mut Object {
         let type_id = TypeId::of::<T>();
         assert!(
             !self.components.contains_key(&type_id),
             "Component already exists"
         );
         self.components.insert(type_id, Box::new(component));
-        self.get_component_mut::<T>().unwrap()
+        self
     }
 
     /// To get component by Type if it exist
@@ -39,7 +39,7 @@ impl Object {
             .and_then(|c| c.downcast_mut())
     }
 
-    pub fn set_script<S: Script>(&mut self, script: S) {
-        self.script = Some(Box::new(script));
+    pub fn set_script(&mut self, script: Box<dyn Script>) {
+        self.script = Some(script);
     }
 }

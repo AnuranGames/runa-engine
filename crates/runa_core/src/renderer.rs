@@ -20,8 +20,12 @@ impl CoreRenderer {
     }
 
     pub fn submit_sprite(&mut self, sprite: &Sprite, transform: &Transform) {
-        self.queue
-            .draw_sprite(sprite.texture.clone(), transform.matrix());
+        self.queue.draw_sprite(
+            sprite.texture.clone(),
+            transform.position,
+            transform.rotation,
+            transform.scale,
+        );
     }
 
     pub fn clear(&mut self) {
