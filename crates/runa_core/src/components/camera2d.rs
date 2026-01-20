@@ -29,7 +29,7 @@ impl Camera2D {
 
         // Инвертируем Y для WebGPU (экранная система координат)
         let proj = Mat4::orthographic_lh(
-            -half_w, half_w, half_h, -half_h, // ← поменяли местами!
+            -half_w, half_w, -half_h, half_h, // ← поменяли местами!
             -1000.0, 1000.0,
         );
 

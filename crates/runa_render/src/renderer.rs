@@ -138,9 +138,6 @@ impl<'window> Renderer<'window> {
         let view = &surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         self.queue.write_buffer(
             &self.globals_buffer,
@@ -152,6 +149,22 @@ impl<'window> Renderer<'window> {
                 _padding: [0.0; 7],
             }),
         );
+
+        for (i, cmd) in queue.commands.iter().enumerate() {
+            match cmd {
+                RenderCommands::Sprite {
+                    texture: _,
+                    position,
+                    rotation: _,
+                    scale: _,
+                } => {
+                    println!(
+                        "Rendering sprite #{} at: ({:.1}, {:.1})",
+                        i, position.x, position.y
+                    );
+                }
+            }
+        }
 
         for cmd in &queue.commands {
             match cmd {
@@ -172,28 +185,28 @@ impl<'window> Renderer<'window> {
                         // Треугольник 1
                         Vertex {
                             position: [-world_width * 0.5, -world_height * 0.5],
-                            tex_coords: [0.0, 0.0],
+                            tex_coords: [0.0, 1.0], // ← поменяли Y
                         },
                         Vertex {
                             position: [world_width * 0.5, -world_height * 0.5],
-                            tex_coords: [1.0, 0.0],
+                            tex_coords: [1.0, 1.0], // ← поменяли Y
                         },
                         Vertex {
                             position: [-world_width * 0.5, world_height * 0.5],
-                            tex_coords: [0.0, 1.0],
+                            tex_coords: [0.0, 0.0], // ← поменяли Y
                         },
                         // Треугольник 2
                         Vertex {
                             position: [world_width * 0.5, -world_height * 0.5],
-                            tex_coords: [1.0, 0.0],
+                            tex_coords: [1.0, 1.0], // ← поменяли Y
                         },
                         Vertex {
                             position: [world_width * 0.5, world_height * 0.5],
-                            tex_coords: [1.0, 1.0],
+                            tex_coords: [1.0, 0.0], // ← поменяли Y
                         },
                         Vertex {
                             position: [-world_width * 0.5, world_height * 0.5],
-                            tex_coords: [0.0, 1.0],
+                            tex_coords: [0.0, 0.0], // ← поменяли Y
                         },
                     ]
                     .iter()
@@ -248,30 +261,35 @@ impl<'window> Renderer<'window> {
                         label: Some("Sprite BindGroup"),
                     });
 
-                    {
-                        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Sprite Pass"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
-                                depth_slice: None,
-                            })],
-                            ..Default::default()
-                        });
+                    let mut encoder = self
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-                        rpass.set_pipeline(&self.sprite_pipeline.pipeline);
-                        rpass.set_bind_group(0, &bind_group, &[]);
-                        rpass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
-                        rpass.draw(0..self.quad_vertex_count, 0..1);
-                    }
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Sprite Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                            depth_slice: None,
+                        })],
+                        ..Default::default()
+                    });
+
+                    rpass.set_pipeline(&self.sprite_pipeline.pipeline);
+                    rpass.set_bind_group(0, &bind_group, &[]);
+                    rpass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+                    rpass.draw(0..self.quad_vertex_count, 0..1);
+
+                    drop(rpass);
+
+                    self.queue.submit(Some(encoder.finish()));
                 }
             }
         }
-        self.queue.submit(Some(encoder.finish()));
         surface_texture.present();
     }
 }

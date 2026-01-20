@@ -17,11 +17,15 @@ impl World {
         }
     }
 
-    pub fn spawn(&mut self, script: Box<dyn Script>) {
+    pub fn spawn(&mut self, script: Box<dyn Script>) -> &Object {
         let mut object = Object::new();
         object.set_script(script);
 
         self.objects.push(object);
+        self.objects.get(self.objects.len() - 1).unwrap()
+    }
+
+    pub fn construct(&mut self) {
         for object in &mut self.objects {
             if let Some(script) = object.script.take() {
                 script.construct(object);

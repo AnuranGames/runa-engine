@@ -66,7 +66,7 @@ impl<'window> ApplicationHandler for App<'window> {
         }
     }
 
-    fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: winit::event::StartCause) {
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
         const FIXED_TIMESTEP: f32 = 1.0 / 60.0;
 
         let current_time = Instant::now();
