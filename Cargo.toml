@@ -10,3 +10,8 @@ members = [
 ]
 
 resolver = "2"
+
+[workspace.dependencies]
+winit = { version = "0.30.12" }
+pollster = { version = "0.4" }
+wgpu = { version = "28.0.0" }

@@ -2,9 +2,10 @@ use runa_render_api::queue::RenderQueue;
 
 use crate::{
     components::{sprite_renderer::SpriteRenderer, transform::Transform},
-    ocs::object::Object,
+    ocs::{object::Object, script::Script},
 };
 
+#[derive(Default)]
 pub struct World {
     pub objects: Vec<Object>,
 }
@@ -16,7 +17,10 @@ impl World {
         }
     }
 
-    pub fn spawn(&mut self, object: Object) {
+    pub fn spawn(&mut self, script: Box<dyn Script>) {
+        let mut object = Object::new();
+        object.set_script(script);
+
         self.objects.push(object);
         for object in &mut self.objects {
             if let Some(script) = object.script.take() {

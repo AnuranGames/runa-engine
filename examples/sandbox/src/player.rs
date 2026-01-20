@@ -1,4 +1,4 @@
-use glam::Vec2;
+use glam::{Quat, Vec2};
 use runa_core::components::sprite_renderer::SpriteRenderer;
 use runa_core::components::transform::Transform;
 use runa_core::ocs::object::Object;
@@ -14,6 +14,10 @@ impl RotatingSprite {
             speed: degrees_per_second,
         }
     }
+
+    pub fn booster(&mut self) {
+        self.speed *= 2.0;
+    }
 }
 
 impl Script for RotatingSprite {
@@ -21,20 +25,28 @@ impl Script for RotatingSprite {
         _object
             .add_component(Transform::default())
             .add_component(SpriteRenderer {
-                texture: Some(runa_asset::loader::load_image("assets/player.png")),
+                texture: Some(runa_asset::loader::load_image("assets/Tester1.png")),
             });
     }
 
     fn start(&mut self, _object: &mut Object) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
             transform.position = Vec2 { x: 0.0, y: 0.0 };
-            transform.rotation = 0.0;
+            transform.scale = Vec2 { x: 1.0, y: 1.0 };
         }
     }
 
     fn update(&mut self, _object: &mut Object, dt: f32) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
-            transform.rotation += self.speed * dt;
+            // Применяем поворот
+            transform.rotation *= Quat::from_rotation_y(self.speed * dt);
+
+            // ⚠️ ОБЯЗАТЕЛЬНО нормализуем!
+            transform.rotation = transform.rotation.normalize();
+
+            if transform.rotation.y >= 90.0 {
+                self.booster();
+            }
         }
     }
 }

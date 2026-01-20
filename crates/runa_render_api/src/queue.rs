@@ -1,7 +1,8 @@
 use crate::command::RenderCommands;
-use glam::Vec2;
+use glam::{Quat, Vec2};
 use runa_asset::{handle::Handle, texture::TextureAsset};
 
+#[derive(Default)]
 pub struct RenderQueue {
     pub commands: Vec<RenderCommands>,
 }
@@ -17,7 +18,7 @@ impl RenderQueue {
         &mut self,
         texture: Handle<TextureAsset>,
         position: Vec2,
-        rotation: f32,
+        rotation: Quat,
         scale: Vec2,
     ) {
         self.commands.push(RenderCommands::Sprite {
