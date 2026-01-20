@@ -4,11 +4,11 @@ use runa_core::components::transform::Transform;
 use runa_core::ocs::object::Object;
 use runa_core::ocs::script::Script;
 
-pub struct RotatingSprite2 {
+pub struct RotatingSprite3 {
     pub speed: f32,
 }
 
-impl RotatingSprite2 {
+impl RotatingSprite3 {
     pub fn new(degrees_per_second: f32) -> Self {
         Self {
             speed: degrees_per_second,
@@ -20,7 +20,7 @@ impl RotatingSprite2 {
     }
 }
 
-impl Script for RotatingSprite2 {
+impl Script for RotatingSprite3 {
     fn construct(&self, _object: &mut runa_core::ocs::object::Object) {
         _object
             .add_component(Transform::default())
@@ -31,7 +31,7 @@ impl Script for RotatingSprite2 {
 
     fn start(&mut self, _object: &mut Object) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
-            transform.position = Vec2 { x: 2.0, y: 2.0 };
+            transform.position = Vec2 { x: -4.0, y: -3.0 };
             transform.scale = Vec2 { x: 1.0, y: 1.0 };
         }
     }
@@ -39,7 +39,7 @@ impl Script for RotatingSprite2 {
     fn update(&mut self, _object: &mut Object, dt: f32) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
             // Применяем поворот
-            transform.rotation *= Quat::from_rotation_z(self.speed * dt);
+            transform.rotation *= Quat::from_rotation_x(self.speed * dt);
 
             // ⚠️ ОБЯЗАТЕЛЬНО нормализуем!
             transform.rotation = transform.rotation.normalize();
