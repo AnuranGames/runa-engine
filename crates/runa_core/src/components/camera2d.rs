@@ -11,6 +11,7 @@ pub struct Camera2D {
     /// Virtual size/camera render size (for example 320x180)
     pub virtual_size: Vec2,
     // pub pixel_perfect: bool, // ← новый флаг
+    pub viewport_size: (u32, u32),
 }
 
 impl Camera2D {
@@ -19,7 +20,7 @@ impl Camera2D {
             position: Vec2::ZERO,
             zoom: 1.0,
             virtual_size: Vec2::new(virtual_width / 10.0, virtual_height / 10.0),
-            // pixel_perfect,
+            viewport_size: (0, 0),
         }
     }
 
@@ -35,5 +36,20 @@ impl Camera2D {
 
         let view = Mat4::from_translation(Vec3::new(-self.position.x, -self.position.y, 0.0));
         proj * view
+    }
+
+    pub fn screen_to_world(&self, screen_pos: (f32, f32)) -> Vec2 {
+        let (screen_x, screen_y) = screen_pos;
+        let (viewport_width, viewport_height) = self.viewport_size;
+
+        // Нормализуем экранные координаты к NDC (-1 to 1)
+        let ndc_x = (screen_x / viewport_width as f32) * 2.0 - 1.0;
+        let ndc_y = 1.0 - (screen_y / viewport_height as f32) * 2.0; // инвертируем Y
+
+        // Масштабируем до виртуального размера
+        let world_x = ndc_x * (self.virtual_size.x * 0.5) / self.zoom + self.position.x;
+        let world_y = ndc_y * (self.virtual_size.y * 0.5) / self.zoom + self.position.y;
+
+        Vec2::new(world_x, world_y)
     }
 }

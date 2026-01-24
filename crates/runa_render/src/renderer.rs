@@ -68,7 +68,17 @@ impl<'window> Renderer<'window> {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
-        let surface_config = surface.get_default_config(&adapter, width, height).unwrap();
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface.get_capabilities(&adapter).formats[0],
+            width: size.width.max(1),
+            height: size.height.max(1),
+            // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
+            present_mode: wgpu::PresentMode::Immediate, // вместо Fifo
+            alpha_mode: surface.get_capabilities(&adapter).alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
         surface.configure(&device, &surface_config);
 
         let sprite_pipeline = SpritePipeline::new(&device, surface_config.format);

@@ -2,13 +2,15 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use runa_core::components::camera2d::Camera2D;
+use runa_core::input::InputState;
 use runa_core::ocs::world::World;
 use runa_render::renderer::Renderer;
 use runa_render_api::queue::RenderQueue;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
-use winit::window::{Window, WindowId};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Fullscreen, Window, WindowId};
 
 pub struct App<'window> {
     pub window: Option<Arc<Window>>,
@@ -22,9 +24,27 @@ pub struct App<'window> {
     pub accumulator: f32,
     pub frame_count: u32,
     pub last_fps_update: Instant,
+
+    pub is_fullscreen: bool,
+    pub input_state: InputState,
 }
 
 impl<'window> App<'window> {
+    fn toggle_fullscreen(&mut self) {
+        if let Some(window) = &self.window {
+            self.is_fullscreen = !self.is_fullscreen;
+
+            if self.is_fullscreen {
+                // Вход в полноэкранный режим
+                let fullscreen = Some(Fullscreen::Borderless(window.current_monitor()));
+                window.set_fullscreen(fullscreen);
+            } else {
+                // Выход из полноэкранного режима
+                window.set_fullscreen(None);
+            }
+        }
+    }
+
     fn render(&mut self) {
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
             // Очищаем очередь
@@ -77,6 +97,11 @@ impl<'window> ApplicationHandler for App<'window> {
 
         // Fixed timestep обновление
         while self.accumulator >= FIXED_TIMESTEP {
+            self.input_state.camera = Some(self.camera.clone());
+
+            // Обработка ввода во всех скриптах
+            self.world.input(&self.input_state);
+
             self.world.update(FIXED_TIMESTEP);
             self.accumulator -= FIXED_TIMESTEP;
         }
@@ -102,6 +127,7 @@ impl<'window> ApplicationHandler for App<'window> {
                     (self.renderer.as_mut(), self.window.as_ref())
                 {
                     wgpu_ctx.resize((new_size.width, new_size.height));
+                    self.camera.viewport_size = (new_size.width, new_size.height);
                     window.request_redraw();
                 }
             }
@@ -113,6 +139,30 @@ impl<'window> ApplicationHandler for App<'window> {
                 }
                 self.render();
             }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F11),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.toggle_fullscreen();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(key_code) = event.physical_key {
+                    if event.state == ElementState::Pressed {
+                        self.input_state.keys_pressed.insert(key_code);
+                        self.input_state.keys_just_pressed.insert(key_code);
+                    } else {
+                        self.input_state.keys_pressed.remove(&key_code);
+                        self.input_state.keys_just_released.insert(key_code);
+                    }
+                }
+            }
+
             _ => (),
         }
     }
