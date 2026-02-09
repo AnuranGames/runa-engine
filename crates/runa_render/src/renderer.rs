@@ -136,6 +136,90 @@ impl<'window> Renderer<'window> {
         pollster::block_on(Self::new_async(window))
     }
 
+    // pub fn render_to_texture(
+    //     &self,
+    //     queue: &wgpu::Queue,
+    //     render_queue: &RenderQueue,
+    //     width: u32,
+    //     height: u32,
+    // ) -> wgpu::Texture {
+    //     // 1. Создать offscreen texture (RGBA8Unorm)
+    //     let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+    //         label: Some("Offscreen Render Texture"),
+    //         size: wgpu::Extent3D {
+    //             width,
+    //             height,
+    //             depth_or_array_layers: 1,
+    //         },
+    //         mip_level_count: 1,
+    //         sample_count: 1,
+    //         dimension: wgpu::TextureDimension::D2,
+    //         format: wgpu::TextureFormat::Rgba8UnormSrgb,
+    //         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+    //         view_formats: &[],
+    //     });
+
+    //     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    //     // 2. Создать временную depth buffer (если нужна)
+    //     let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+    //         label: Some("Depth Texture"),
+    //         size: wgpu::Extent3D {
+    //             width,
+    //             height,
+    //             depth_or_array_layers: 1,
+    //         },
+    //         mip_level_count: 1,
+    //         sample_count: 1,
+    //         dimension: wgpu::TextureDimension::D2,
+    //         format: wgpu::TextureFormat::Depth32Float,
+    //         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+    //         view_formats: &[],
+    //     });
+    //     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    //     // 3. Начать рендер-пас в эту текстуру
+    //     let mut encoder = self
+    //         .device
+    //         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    //             label: Some("Offscreen Render Encoder"),
+    //         });
+
+    //     {
+    //         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    //             label: Some("Offscreen Render Pass"),
+    //             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+    //                 view: &view,
+    //                 resolve_target: None,
+    //                 ops: wgpu::Operations {
+    //                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+    //                     store: wgpu::StoreOp::Store,
+    //                 },
+    //                 depth_slice: None,
+    //             })],
+    //             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+    //                 view: &depth_view,
+    //                 depth_ops: Some(wgpu::Operations {
+    //                     load: wgpu::LoadOp::Clear(1.0),
+    //                     store: wgpu::StoreOp::Discard,
+    //                 }),
+    //                 stencil_ops: None,
+    //             }),
+    //             occlusion_query_set: None,
+    //             timestamp_writes: None,
+    //             multiview_mask: None,
+    //         });
+
+    //         // Вызови свою систему рендера
+    //         self.render_internal(&mut rpass, render_queue);
+    //     }
+
+    //     // 4. Отправить команды
+    //     self.queue.submit(Some(encoder.finish()));
+
+    //     texture // вернём текстуру, чтобы прочитать позже
+    // }
+
     pub fn resize(&mut self, new_size: (u32, u32)) {
         let (width, height) = new_size;
         self.surface_config.width = width.max(1);
@@ -167,6 +251,27 @@ impl<'window> Renderer<'window> {
             }),
         );
 
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Sprite Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            ..Default::default()
+        });
+
+        let mut vertex_offset = 0;
         let mut all_vertices = Vec::with_capacity(queue.commands.len() * 6);
         for cmd in &queue.commands {
             match cmd {
@@ -181,6 +286,11 @@ impl<'window> Renderer<'window> {
 
                     let world_width = (tex_width / 16.0) * scale.x;
                     let world_height = (tex_height / 16.0) * scale.y;
+
+                    let key = Arc::as_ptr(&texture.inner) as usize;
+                    let gpu_texture = self.textures.entry(key).or_insert_with(|| {
+                        GpuTexture::from_asset(&self.device, &self.queue, &texture.inner)
+                    });
 
                     let sprite_vertices: [Vertex; 6] = [
                         Vertex {
@@ -209,6 +319,25 @@ impl<'window> Renderer<'window> {
                         },
                     ];
 
+                    let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout: &self.sprite_pipeline.bind_group_layout,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: self.globals_buffer.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(&gpu_texture.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(&self.nearest_sampler),
+                            },
+                        ],
+                        label: Some("Sprite BindGroup"),
+                    });
+
                     let transformed_vertices: Vec<Vertex> = sprite_vertices
                         .iter()
                         .map(|v| {
@@ -225,6 +354,12 @@ impl<'window> Renderer<'window> {
                         })
                         .collect();
 
+                    rpass.set_pipeline(&self.sprite_pipeline.pipeline);
+                    rpass.set_bind_group(0, &bind_group, &[]);
+                    rpass.set_vertex_buffer(0, self.vertex_buffer.slice(vertex_offset..));
+                    rpass.draw(0..6, 0..1);
+
+                    vertex_offset += (std::mem::size_of::<Vertex>() * 6) as u64;
                     all_vertices.extend(transformed_vertices);
                 }
                 RenderCommands::DebugRect {
@@ -233,37 +368,6 @@ impl<'window> Renderer<'window> {
                     color,
                 } => {
                     // Create vertices for a rectangle
-                    let half_width = size.x * 0.5;
-                    let half_height = size.y * 0.5;
-
-                    let rect_vertices: [Vertex; 6] = [
-                        Vertex {
-                            position: [position.x - half_width, position.y - half_height],
-                            tex_coords: [0.0, 1.0],
-                        },
-                        Vertex {
-                            position: [position.x + half_width, position.y - half_height],
-                            tex_coords: [1.0, 1.0],
-                        },
-                        Vertex {
-                            position: [position.x - half_width, position.y + half_height],
-                            tex_coords: [0.0, 0.0],
-                        },
-                        Vertex {
-                            position: [position.x + half_width, position.y - half_height],
-                            tex_coords: [1.0, 1.0],
-                        },
-                        Vertex {
-                            position: [position.x + half_width, position.y + half_height],
-                            tex_coords: [1.0, 0.0],
-                        },
-                        Vertex {
-                            position: [position.x - half_width, position.y + half_height],
-                            tex_coords: [0.0, 0.0],
-                        },
-                    ];
-
-                    all_vertices.extend_from_slice(&rect_vertices);
                 }
                 RenderCommands::Text {
                     text,
@@ -290,44 +394,6 @@ impl<'window> Renderer<'window> {
         if !all_vertices.is_empty() {
             self.queue
                 .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&all_vertices));
-        }
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Sprite Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            ..Default::default()
-        });
-
-        // Now render the accumulated vertices (DebugRects and potentially Text)
-        if !all_vertices.is_empty() {
-            // Create a simple pipeline for rendering colored rectangles without textures
-            // For now, we'll reuse the sprite pipeline but this would ideally be a separate pipeline
-            // For simplicity, we'll just render the vertices directly
-
-            // We need to make sure the vertex buffer has all the vertices
-            // The vertices are already written to the buffer earlier
-
-            // Calculate how many rectangles we have based on vertex count (6 vertices per rect)
-            let total_rect_vertices = all_vertices.len();
-            if total_rect_vertices > 0 {
-                rpass.set_pipeline(&self.sprite_pipeline.pipeline);
-                rpass.set_vertex_buffer(0, self.vertex_buffer.slice(0..)); // Start from beginning of buffer
-                rpass.draw(0..total_rect_vertices as u32, 0..1); // Draw all accumulated vertices
-            }
         }
 
         drop(rpass);

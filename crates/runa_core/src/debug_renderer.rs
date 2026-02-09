@@ -25,13 +25,13 @@ impl DebugRenderer {
         self.debug_draw_collisions
     }
 
-    pub fn render_debug(&self, world: &World, render_queue: &mut RenderQueue) {
+    pub fn render_debug(&self, world: &World, _render_queue: &mut RenderQueue) {
         if !self.debug_draw_collisions {
             return;
         }
 
         for object in &world.objects {
-            if let (Some(transform), Some(collision)) = (
+            if let (Some(_transform), Some(_collision)) = (
                 object.get_component::<Transform>(),
                 object.get_component::<PhysicsCollision>(),
             ) {

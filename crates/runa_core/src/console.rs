@@ -118,11 +118,6 @@ impl Console {
             return;
         }
 
-        // Handle character input for the command line
-        // This is a simplified approach - in a real implementation, we'd need to handle
-        // text input events from the windowing system
-        use winit::keyboard::{Key, NamedKey};
-
         // For now, we'll simulate character input by checking specific keys
         // In a real implementation, we'd hook into the window event system directly
 

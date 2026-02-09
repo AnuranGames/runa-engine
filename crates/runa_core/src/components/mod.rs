@@ -1,3 +1,4 @@
+pub mod audio_source;
 pub mod camera2d;
 pub mod component;
 pub mod cursor_interactable;

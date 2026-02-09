@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::resources::texture::GpuTexture;
 use glam::Vec2;

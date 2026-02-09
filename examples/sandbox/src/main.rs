@@ -21,7 +21,7 @@ fn main() -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
 
-    let camera = Camera2D::new(320.0, 180.0); // виртуальный размер
+    let camera = Camera2D::new(320.0, 180.0);
     let input_state = InputState::default();
     let mut world = runa_core::ocs::world::World::default();
     let interaction_system = InteractionSystem::new();

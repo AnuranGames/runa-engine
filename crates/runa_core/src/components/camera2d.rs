@@ -15,11 +15,11 @@ pub struct Camera2D {
 }
 
 impl Camera2D {
-    pub fn new(virtual_width: f32, virtual_height: f32) -> Self {
+    pub fn new(vw: f32, vh: f32) -> Self {
         Self {
             position: Vec2::ZERO,
             zoom: 1.0,
-            virtual_size: Vec2::new(virtual_width / 10.0, virtual_height / 10.0),
+            virtual_size: Vec2::new(vw / 10.0, vh / 10.0),
             viewport_size: (0, 0),
         }
     }
