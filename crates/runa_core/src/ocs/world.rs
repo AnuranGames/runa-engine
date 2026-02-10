@@ -107,4 +107,8 @@ impl World {
     pub fn is_debug_draw_collisions_enabled(&self) -> bool {
         self.debug_renderer.is_debug_draw_collisions_enabled()
     }
+
+    pub fn objects_mut(&mut self) -> &mut Vec<Object> {
+        &mut self.objects
+    }
 }

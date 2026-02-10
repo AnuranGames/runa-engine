@@ -3409,9 +3409,11 @@ dependencies = [
  "bytemuck",
  "glam",
  "rodio",
+ "ron",
  "runa_asset",
  "runa_render",
  "runa_render_api",
+ "serde",
  "winit",
 ]
 
