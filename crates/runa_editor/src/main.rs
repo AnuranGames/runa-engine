@@ -41,33 +41,24 @@ impl App for Editor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         TopBottomPanel::top("top_panel").show(ctx, |ui| {
             menu::MenuBar::new().ui(ui, |ui| {
-                // File
                 ui.menu_button("File", |ui| {
-                    if ui.button("New World").clicked() {
-                        // TODO
-                    }
-                    if ui.button("Open...").clicked() {
-                        // TODO
-                    }
-                    if ui.button("Save").clicked() {
-                        // TODO
-                    }
-                    if ui.button("Save As...").clicked() {
-                        // TODO
-                    }
+                    if ui.button("New World").clicked() { /* ... */ }
+                    if ui.button("Open...").clicked() { /* ... */ }
+                    if ui.button("Save").clicked() { /* ... */ }
+                    if ui.button("Save As...").clicked() { /* ... */ }
                     ui.separator();
                     if ui.button("Exit").clicked() {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
 
-                // Edit
                 ui.menu_button("Edit", |ui| {
                     if ui.button("Undo").clicked() { /* ... */ }
                     if ui.button("Redo").clicked() { /* ... */ }
+                    ui.separator();
+                    if ui.button("Project Settings").clicked() { /* ... */ }
                 });
 
-                // View
                 ui.menu_button("View", |ui| {
                     if ui.button("Content Browser (Ctrl+Space)").clicked() {
                         self.show_content_browser = !self.show_content_browser;
@@ -81,7 +72,7 @@ impl App for Editor {
         // ctx.
 
         SidePanel::left("hierarchy_panel")
-            .min_width(300.0)
+            .min_width(400.0)
             .show(ctx, |ui| {
                 ui.heading("Hierarchy");
                 ui.separator();
@@ -89,7 +80,7 @@ impl App for Editor {
             });
 
         SidePanel::right("inspector_panel")
-            .min_width(300.0)
+            .min_width(400.0)
             .show(ctx, |ui| {
                 ui.heading("Inspector");
                 ui.separator();
