@@ -4,7 +4,6 @@ use runa_render_api::queue::RenderQueue;
 use crate::{
     components::{sprite_renderer::SpriteRenderer, transform::Transform},
     debug_renderer::DebugRenderer,
-    input::InputState,
     ocs::{object::Object, script::Script},
 };
 
@@ -58,14 +57,6 @@ impl World {
         for object in &mut self.objects {
             if let Some(mut script) = object.script.take() {
                 script.update(object, dt);
-                object.script = Some(script);
-            }
-        }
-    }
-    pub fn input(&mut self, input: &InputState) {
-        for object in &mut self.objects {
-            if let Some(mut script) = object.script.take() {
-                script.input(object, input);
                 object.script = Some(script);
             }
         }

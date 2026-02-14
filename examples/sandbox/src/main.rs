@@ -4,7 +4,6 @@ use crate::app::App;
 
 use runa_core::components::camera2d::Camera2D;
 use runa_core::console::Console;
-use runa_core::input::InputState;
 use runa_core::systems::interaction_system::InteractionSystem;
 use runa_render_api::queue::RenderQueue;
 use winit::error::EventLoopError;
@@ -20,11 +19,11 @@ mod tester1;
 fn main() -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
+    runa_core::input::InputState::initialize();
+    let interaction_system = InteractionSystem::new();
 
     let camera = Camera2D::new(320.0, 180.0);
-    let input_state = InputState::default();
     let mut world = runa_core::ocs::world::World::default();
-    let interaction_system = InteractionSystem::new();
 
     world.spawn(Box::new(RotatingSprite1::new()));
     world.spawn(Box::new(Player::new()));
@@ -45,7 +44,6 @@ fn main() -> Result<(), EventLoopError> {
         camera,
         world,
         is_fullscreen: false,
-        input_state,
         interaction_system,
         console,
     };

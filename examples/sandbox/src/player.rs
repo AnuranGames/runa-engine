@@ -1,9 +1,9 @@
 use glam::Vec2;
 use runa_core::{
     components::{sprite_renderer::SpriteRenderer, transform::Transform},
-    ocs::script::Script,
+    input_system::*,
+    ocs::Script,
 };
-use winit::keyboard::KeyCode;
 
 pub struct Player {
     speed: f32,
@@ -29,27 +29,6 @@ impl Script for Player {
             });
     }
 
-    fn input(
-        &mut self,
-        _object: &mut runa_core::ocs::object::Object,
-        _input: &runa_core::input::InputState,
-    ) {
-        self.direction = Vec2::ZERO;
-        // реализована система ввода с кливиатуры пользователя.
-        if _input.is_key_pressed(KeyCode::KeyW) {
-            self.direction.y = 1.0;
-        }
-        if _input.is_key_pressed(KeyCode::KeyS) {
-            self.direction.y = -1.0;
-        }
-        if _input.is_key_pressed(KeyCode::KeyD) {
-            self.direction.x = 1.0;
-        }
-        if _input.is_key_pressed(KeyCode::KeyA) {
-            self.direction.x = -1.0;
-        }
-    }
-
     fn start(&mut self, _object: &mut runa_core::ocs::object::Object) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
             // стартовая позиция игрока
@@ -60,6 +39,20 @@ impl Script for Player {
 
     fn update(&mut self, _object: &mut runa_core::ocs::object::Object, _dt: f32) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
+            self.direction = Vec2::ZERO;
+            // реализована система ввода с кливиатуры пользователя.
+            if Input::is_key_pressed(KeyCode::KeyW) {
+                self.direction.y = 1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyS) {
+                self.direction.y = -1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyD) {
+                self.direction.x = 1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyA) {
+                self.direction.x = -1.0;
+            }
             // update каждый игровой тик, независимо от fps пользователя
             transform.position += self.direction.normalize_or_zero() * self.speed;
         }

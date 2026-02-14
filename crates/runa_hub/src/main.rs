@@ -1,5 +1,5 @@
 use eframe::{egui, App};
-use egui::{IconData, TextureHandle, ViewportBuilder};
+use egui::{TextureHandle, ViewportBuilder};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;

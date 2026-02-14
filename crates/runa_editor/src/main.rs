@@ -72,7 +72,7 @@ impl App for Editor {
         // ctx.
 
         SidePanel::left("hierarchy_panel")
-            .min_width(400.0)
+            .default_width(300.0)
             .show(ctx, |ui| {
                 ui.heading("Hierarchy");
                 ui.separator();
@@ -80,7 +80,7 @@ impl App for Editor {
             });
 
         SidePanel::right("inspector_panel")
-            .min_width(400.0)
+            .default_width(300.0)
             .show(ctx, |ui| {
                 ui.heading("Inspector");
                 ui.separator();
@@ -91,7 +91,7 @@ impl App for Editor {
             // === Кнопка Play поверх viewport'а ===
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                let available = ui.available_rect_before_wrap();
+                let _available = ui.available_rect_before_wrap();
                 // Позиционируем кнопку в левом верхнем углу viewport'а
                 ui.scope_builder(
                     UiBuilder::new().layer_id(egui::LayerId::new(
@@ -103,7 +103,7 @@ impl App for Editor {
                             .button(RichText::new("▶ Play").color(egui::Color32::WHITE))
                             .clicked()
                         {
-                            let world_ref = &self.world; // borrow
+                            let _world_ref = &self.world; // borrow
                             std::thread::spawn(move || {
                                 // Но! Нельзя передать &World в другой поток — не Send!
                             });
@@ -124,9 +124,10 @@ impl App for Editor {
 
         if self.show_content_browser {
             // Полупрозрачный затемняющий фон поверх всего
-            let area = egui::Area::new(egui::Id::new("content_browser_overlay"))
+            let _area = egui::Area::new(egui::Id::new("content_browser_overlay"))
                 .order(egui::Order::Background) // под основным UI
                 .fixed_pos(egui::Pos2::ZERO)
+                .fade_in(true)
                 .interactable(false);
 
             // area.show(ctx, |ui| {

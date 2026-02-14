@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-runa_asset = {path = "../runa_asset"}
-runa_render = {path = "../runa_render"}
-runa_render_api = {path = "../runa_render_api"}
+runa_asset = { path = "../runa_asset" }
+runa_render = { path = "../runa_render" }
+runa_render_api = { path = "../runa_render_api" }
 
-glam = "0.30.9"
+glam.workspace = true
 bytemuck = { version = "1.14", features = ["derive"] }
 winit.workspace = true
 rodio = "0.21.1"

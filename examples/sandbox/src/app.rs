@@ -28,7 +28,6 @@ pub struct App<'window> {
     pub last_fps_update: Instant,
 
     pub is_fullscreen: bool,
-    pub input_state: InputState,
     pub interaction_system: InteractionSystem,
 
     pub console: Console,
@@ -105,13 +104,13 @@ impl<'window> ApplicationHandler for App<'window> {
 
         // Fixed timestep обновление
         while self.accumulator >= FIXED_TIMESTEP {
-            self.input_state.camera = Some(self.camera.clone());
-
-            // Обработка ввода во всех скриптах
-            self.world.input(&self.input_state);
+            {
+                let mut input_state = InputState::current_mut();
+                input_state.camera = Some(self.camera.clone());
+            } // Release the lock immediately after setting the camera
 
             self.world.update(FIXED_TIMESTEP);
-            self.input_state.update_frame();
+            InputState::update_frame();
 
             self.accumulator -= FIXED_TIMESTEP;
         }
@@ -125,21 +124,16 @@ impl<'window> ApplicationHandler for App<'window> {
         }
 
         // Update console
-        self.console.handle_input(&self.input_state);
+        self.console.handle_input();
         self.console.render(&mut self.queue, &self.camera);
 
         // Only process world input if console is not visible
         if !self.console.is_visible() {
-            // Process input for all scripts
-            self.world.input(&self.input_state);
-
             // Process interaction system
-            self.interaction_system
-                .update(&mut self.world, &self.input_state);
+            self.interaction_system.update(&mut self.world);
         } else {
             // When console is visible, still process input for the world
             // but scripts can check if console is visible and decide whether to respond
-            self.world.input(&self.input_state);
         }
     }
 
@@ -159,6 +153,7 @@ impl<'window> ApplicationHandler for App<'window> {
                 {
                     wgpu_ctx.resize((new_size.width, new_size.height));
                     self.camera.viewport_size = (new_size.width, new_size.height);
+                    self.camera.update_aspect_correction();
                     window.request_redraw();
                 }
             }
@@ -183,12 +178,13 @@ impl<'window> ApplicationHandler for App<'window> {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(key_code) = event.physical_key {
+                    let mut input_state = InputState::current_mut();
                     if event.state == ElementState::Pressed {
-                        self.input_state.keys_pressed.insert(key_code);
-                        self.input_state.keys_just_pressed.insert(key_code);
+                        input_state.keys_pressed.insert(key_code);
+                        input_state.keys_just_pressed.insert(key_code);
                     } else {
-                        self.input_state.keys_pressed.remove(&key_code);
-                        self.input_state.keys_just_pressed.remove(&key_code);
+                        input_state.keys_pressed.remove(&key_code);
+                        input_state.keys_just_pressed.remove(&key_code);
                     }
                     if key_code == KeyCode::Backquote {
                         self.console.toggle();
@@ -209,23 +205,26 @@ impl<'window> ApplicationHandler for App<'window> {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.input_state.mouse_position = (position.x as f32, position.y as f32);
+                let mut input_state = InputState::current_mut();
+                input_state.mouse_position = (position.x as f32, position.y as f32);
             }
 
             WindowEvent::MouseWheel { delta, .. } => match delta {
                 MouseScrollDelta::LineDelta(_, y) => {
-                    self.input_state.mouse_wheel_delta = y;
+                    let mut input_state = InputState::current_mut();
+                    input_state.mouse_wheel_delta = y;
                 }
                 _ => {}
             },
 
             WindowEvent::MouseInput { state, button, .. } => {
+                let mut input_state = InputState::current_mut();
                 if state == ElementState::Pressed {
-                    self.input_state.mouse_buttons_pressed.insert(button);
-                    self.input_state.mouse_buttons_just_pressed.insert(button);
+                    input_state.mouse_buttons_pressed.insert(button);
+                    input_state.mouse_buttons_just_pressed.insert(button);
                 } else {
-                    self.input_state.mouse_buttons_pressed.remove(&button);
-                    self.input_state.mouse_buttons_just_pressed.remove(&button);
+                    input_state.mouse_buttons_pressed.remove(&button);
+                    input_state.mouse_buttons_just_pressed.remove(&button);
                 }
             }
 

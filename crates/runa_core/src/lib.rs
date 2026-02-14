@@ -8,3 +8,8 @@ pub mod renderer;
 pub mod systems;
 
 pub use ocs::world::World;
+
+pub mod input_system {
+    pub use crate::input::InputState as Input;
+    pub use winit::{event::MouseButton, keyboard::KeyCode};
+}

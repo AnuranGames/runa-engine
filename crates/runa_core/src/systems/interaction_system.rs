@@ -1,6 +1,6 @@
 use crate::{
     components::{cursor_interactable::CursorInteractable, transform::Transform},
-    input::InputState,
+    input_system::*,
     ocs::world::World,
 };
 use glam::Vec2;
@@ -22,8 +22,8 @@ impl InteractionSystem {
         }
     }
 
-    pub fn update(&mut self, world: &mut World, input_state: &InputState) {
-        self.mouse_position = input_state.get_mouse_world_position().unwrap_or(Vec2::ZERO);
+    pub fn update(&mut self, world: &mut World) {
+        self.mouse_position = Input::get_mouse_world_position().unwrap_or(Vec2::ZERO);
 
         // Reset states
         for object in &mut world.objects {

@@ -1,3 +1,4 @@
+
 [package]
 name = "sandbox"
 version = "0.1.0"
@@ -10,5 +11,5 @@ runa_render_api = { path = "../../crates/runa_render_api" }
 runa_core = { path = "../../crates/runa_core" }
 winit.workspace = true
 pollster.workspace = true
-glam = "0.30.9"
-wgpu = "0.19.2"
+glam.workspace = true
+wgpu.workspace = true

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::components::camera2d::Camera2D;
+use crate::input_system::*;
 use runa_asset::handle::Handle;
 use runa_asset::texture::TextureAsset;
 use runa_render_api::queue::RenderQueue;
@@ -11,8 +12,10 @@ pub struct Console {
     is_visible: bool,
     pub input_buffer: String,
     history: VecDeque<String>,
+
     history_index: Option<usize>,
-    pub(crate) font_texture: Option<Handle<TextureAsset>>,
+
+    font_texture: Option<Handle<TextureAsset>>,
 }
 
 impl Console {
@@ -107,9 +110,9 @@ impl Console {
             });
     }
 
-    pub fn handle_input(&mut self, input: &crate::input::InputState) {
+    pub fn handle_input(&mut self) {
         // Handle toggling with the backtick key
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::Backquote) {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::Backquote) {
             self.toggle();
         }
 
@@ -122,7 +125,7 @@ impl Console {
         // In a real implementation, we'd hook into the window event system directly
 
         // Handle Enter key to execute command
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::Enter) {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::Enter) {
             if !self.input_buffer.is_empty() {
                 // Add the command to history
                 self.history.push_back(self.input_buffer.clone());
@@ -139,17 +142,17 @@ impl Console {
         }
 
         // Handle Backspace
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::Backspace) {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::Backspace) {
             self.input_buffer.pop();
         }
 
         // Handle Escape to close console
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::Escape) {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::Escape) {
             self.is_visible = false;
         }
 
         // Handle Up/Down arrows for command history (simplified)
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::ArrowUp) {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::ArrowUp) {
             if let Some(prev_cmd) = self
                 .history
                 .iter()
@@ -162,7 +165,7 @@ impl Console {
 
         // Add some simulated character input (for demo purposes)
         // In a real implementation, we'd need to handle actual text input
-        if input.is_key_just_pressed(winit::keyboard::KeyCode::KeyA) && !self.is_visible {
+        if Input::is_key_just_pressed(winit::keyboard::KeyCode::KeyA) && !self.is_visible {
             self.add_message("Simulated input: A key pressed");
         }
     }

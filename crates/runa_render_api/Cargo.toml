@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-runa_asset = {path = "../runa_asset"}
-glam = "0.30.9"
+runa_asset = { path = "../runa_asset" }
+glam.workspace = true

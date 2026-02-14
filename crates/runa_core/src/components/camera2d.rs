@@ -12,16 +12,21 @@ pub struct Camera2D {
     pub virtual_size: Vec2,
     // pub pixel_perfect: bool, // ← новый флаг
     pub viewport_size: (u32, u32),
+
+    aspect_correction: f32, // ← новое поле
 }
 
 impl Camera2D {
     pub fn new(vw: f32, vh: f32) -> Self {
-        Self {
+        let mut camera = Self {
             position: Vec2::ZERO,
             zoom: 1.0,
             virtual_size: Vec2::new(vw / 10.0, vh / 10.0),
-            viewport_size: (0, 0),
-        }
+            viewport_size: (800, 600),
+            aspect_correction: 1.0,
+        };
+        camera.update_aspect_correction();
+        camera
     }
 
     pub fn matrix(&self) -> Mat4 {
@@ -38,16 +43,24 @@ impl Camera2D {
         proj * view
     }
 
+    pub fn update_aspect_correction(&mut self) {
+        let window_aspect = self.viewport_size.0 as f32 / self.viewport_size.1 as f32;
+        let virtual_aspect = self.virtual_size.x / self.virtual_size.y;
+        self.aspect_correction = virtual_aspect / window_aspect;
+    }
+
     pub fn screen_to_world(&self, screen_pos: (f32, f32)) -> Vec2 {
         let (screen_x, screen_y) = screen_pos;
         let (viewport_width, viewport_height) = self.viewport_size;
 
-        // Нормализуем экранные координаты к NDC (-1 to 1)
+        // Нормализуем к NDC
         let ndc_x = (screen_x / viewport_width as f32) * 2.0 - 1.0;
-        let ndc_y = 1.0 - (screen_y / viewport_height as f32) * 2.0; // инвертируем Y
+        let ndc_y = 1.0 - (screen_y / viewport_height as f32) * 2.0;
 
-        // Масштабируем до виртуального размера
-        let world_x = ndc_x * (self.virtual_size.x * 0.5) / self.zoom + self.position.x;
+        // ← КЛЮЧЕВОЕ: применяем ОБРАТНУЮ коррекцию аспекта
+        let corrected_ndc_x = ndc_x / self.aspect_correction;
+
+        let world_x = corrected_ndc_x * (self.virtual_size.x * 0.5) / self.zoom + self.position.x;
         let world_y = ndc_y * (self.virtual_size.y * 0.5) / self.zoom + self.position.y;
 
         Vec2::new(world_x, world_y)
