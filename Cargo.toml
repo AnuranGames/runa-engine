@@ -13,9 +13,9 @@ resolver = "2"
 
 [workspace.package]
 version = "0.0.0"
-authors = ["Your Name <you@example.com>"]
+authors = ["Nik Neza <star.off.nik@gmail.com>"]
 edition = "2021"
-license = ""
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/AnuranGames/runa-engine"
 description = "2D/3D game engine in Rust"
 
