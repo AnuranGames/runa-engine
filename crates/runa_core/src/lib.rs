@@ -14,3 +14,6 @@ pub mod input_system {
     pub use crate::input::InputState as Input;
     pub use winit::{event::MouseButton, keyboard::KeyCode};
 }
+
+pub use glam;
+pub use glam::{Mat4, Quat, Vec2, Vec3};

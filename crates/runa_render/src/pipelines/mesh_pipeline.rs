@@ -24,7 +24,7 @@ impl MeshPipeline {
         depth_format: TextureFormat,
     ) -> Self {
         // Шейдеры
-        let shader = device.create_shader_module(include_wgsl!("mesh.wgsl"));
+        let shader = device.create_shader_module(include_wgsl!("../shaders/mesh.wgsl"));
 
         // Uniform буфер
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -77,7 +77,7 @@ impl MeshPipeline {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Mesh Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
-            immediate_size: 0,
+            immediate_size: Default::default(),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -161,8 +161,8 @@ impl MeshPipeline {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview_mask: Default::default(),
             cache: Default::default(),
+            multiview_mask: Default::default(),
         });
 
         Self {

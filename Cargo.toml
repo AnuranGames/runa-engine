@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/runa_app",
     "crates/runa_core",
     "crates/runa_render",
     "crates/runa_asset",
@@ -12,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0-alpha.1"
 authors = ["Nik Neza <star.off.nik@gmail.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -20,7 +21,7 @@ repository = "https://github.com/AnuranGames/runa-engine"
 description = "2D/3D game engine in Rust"
 
 [workspace.dependencies]
-winit = { version = "0.30.12" }
+winit = { version = "0.30.13" }
 pollster = { version = "0.4" }
 wgpu = { version = "28.0.0" }
-glam = { version = "0.32.0" }
+glam = { version = "0.32.1" }

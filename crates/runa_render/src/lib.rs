@@ -1,10 +1,6 @@
-mod font;
-mod renderer;
-mod resources;
-mod pipelines;
-
-// use renderer::Globals;
-// use renderer::Vertex;
-// use resources::texture::GpuTexture;
+pub mod font;
+pub mod pipelines;
+pub mod renderer;
+pub mod resources;
 
 pub use renderer::Renderer;

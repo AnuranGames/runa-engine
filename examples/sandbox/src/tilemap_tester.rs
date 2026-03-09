@@ -19,7 +19,7 @@ impl Script for TilemapTester {
         _object.add_component(Transform::default());
         _object.add_component({
             let mut tilemap = Tilemap::centered(25, 25, USizeVec2::new(2, 2));
-            let mut layer = TilemapLayer::new("Test".to_string(), 25, 25);
+            let mut layer = TilemapLayer::new("Test".into(), 25, 25);
 
             let grass_texture = runa_asset::loader::load_image("assets/TilemapTest.png");
             let dirt_texture = runa_asset::loader::load_image("assets/TilemapTest2.png");
