@@ -1,15 +1,13 @@
 [package]
-name = "runa_render"
+name = "runa_app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [dependencies]
-runa_asset = { path = "../runa_asset" }
+runa_core = { path = "../runa_core" }
+runa_render = { path = "../runa_render" }
 runa_render_api = { path = "../runa_render_api" }
+
 winit.workspace = true
-pollster.workspace = true
-wgpu.workspace = true
-glam.workspace = true
-bytemuck = { version = "1.25.0", features = ["derive"] }

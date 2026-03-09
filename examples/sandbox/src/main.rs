@@ -1,55 +1,90 @@
-use std::time::Instant;
+use runa_app::{RunaApp, RunaWindowConfig};
+use runa_core::World;
 
-use crate::app::App;
+use runa_core::Vec3;
+use runa_core::{
+    components::{SpriteRenderer, Transform},
+    input_system::*,
+    ocs::Script,
+};
 
-use runa_core::components::Camera2D;
-use runa_core::systems::InteractionSystem;
-use runa_core::Console;
-use runa_render_api::RenderQueue;
-use winit::error::EventLoopError;
-use winit::event_loop::{ControlFlow, EventLoop};
+fn main() {
+    // Create a new empty world to hold game objects and systems
+    let mut world = World::default();
 
-use crate::player::Player;
-use crate::tester1::RotatingSprite1;
-use crate::tilemap_tester::TilemapTester;
-
-mod app;
-mod player;
-mod tester1;
-mod tilemap_tester;
-
-fn main() -> Result<(), EventLoopError> {
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
-    runa_core::input::InputState::initialize();
-    let interaction_system = InteractionSystem::new();
-
-    let camera = Camera2D::new(1280.0, 720.0);
-    let mut world = runa_core::ocs::World::default();
-
-    world.spawn(Box::new(TilemapTester::new()));
-    world.spawn(Box::new(RotatingSprite1::new()));
+    // Spawn the player object (managed via its Script implementation)
     world.spawn(Box::new(Player::new()));
 
-    world.construct();
-    world.start();
-
-    let console = Console::new();
-
-    let mut app = App {
-        last_time: Instant::now(),
-        accumulator: 0.0,
-        frame_count: 0,
-        last_fps_update: Instant::now(),
-        window: None,
-        renderer: None,
-        queue: RenderQueue::new(),
-        camera,
-        world,
-        is_fullscreen: false,
-        interaction_system,
-        console,
+    // Configure the application window
+    let config = RunaWindowConfig {
+        title: "Sandbox".to_string(),
+        width: 1280,
+        height: 720,
+        fullscreen: false,
+        vsync: true,
     };
 
-    event_loop.run_app(&mut app)
+    // Launch the engine with the configured world and window settings
+    let _ = RunaApp::run_with_config(world, config);
+}
+
+/// Player script — defines behavior for the player-controlled character.
+pub struct Player {
+    speed: f32,
+    direction: Vec3,
+}
+
+impl Player {
+    pub fn new() -> Self {
+        Self {
+            speed: 0.25,
+            direction: Vec3::ZERO,
+        }
+    }
+}
+
+impl Script for Player {
+    /// Called once when the object is created.
+    /// Initializes components (transform + sprite).
+    fn construct(&self, _object: &mut runa_core::ocs::Object) {
+        _object
+            .add_component(Transform::default())
+            .add_component(SpriteRenderer {
+                texture: Some(runa_asset::loader::load_image("assets/Charactert.png")),
+            });
+    }
+
+    /// Called once on the first tick after the object is added to the world.
+    /// Sets initial position and scale.
+    fn start(&mut self, _object: &mut runa_core::ocs::Object) {
+        if let Some(transform) = _object.get_component_mut::<Transform>() {
+            transform.position = Vec3::new(0.0, 0.0, 0.0);
+            transform.scale = Vec3::new(1.0, 1.0, 1.0);
+        }
+    }
+
+    /// Called every tick. Handles input and updates position.
+    fn update(&mut self, _object: &mut runa_core::ocs::Object, _dt: f32) {
+        if let Some(transform) = _object.get_component_mut::<Transform>() {
+            // Reset movement direction
+            self.direction = Vec3::ZERO;
+
+            // Read input state (WASD keys)
+            if Input::is_key_pressed(KeyCode::KeyW) {
+                self.direction.y = 1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyS) {
+                self.direction.y = -1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyD) {
+                self.direction.x = 1.0;
+            }
+            if Input::is_key_pressed(KeyCode::KeyA) {
+                self.direction.x = -1.0;
+            }
+
+            // Apply normalized movement (diagonal speed compensation)
+            transform.position += self.direction.normalize_or_zero() * self.speed;
+        }
+    }
 }

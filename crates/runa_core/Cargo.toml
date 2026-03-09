@@ -1,7 +1,9 @@
 [package]
 name = "runa_core"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
 runa_asset = { path = "../runa_asset" }
@@ -9,8 +11,8 @@ runa_render = { path = "../runa_render" }
 runa_render_api = { path = "../runa_render_api" }
 
 glam.workspace = true
-bytemuck = { version = "1.14", features = ["derive"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 winit.workspace = true
-rodio = "0.21.1"
+rodio = "0.22.1"
 serde = { version = "1.0", features = ["derive"] }
 ron = "0.12.0"

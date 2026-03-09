@@ -1,16 +1,19 @@
 [package]
 name = "runa_editor"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [dependencies]
-eframe = { version = "0.33.3", features = ["wgpu"] }
 egui = "0.33.3"
-serde = { version = "1.0", features = ["derive"] }
-ron = "0.12.0"
-image = { version = "0.25", features = ["png"] }
+egui-winit = "0.33.3"
+egui-wgpu = "0.33.3"
 winit.workspace = true
+wgpu.workspace = true
+pollster.workspace = true
 
 runa_core = { path = "../runa_core" }
 runa_render = { path = "../runa_render" }
 runa_render_api = { path = "../runa_render_api" }
+runa_asset = { path = "../runa_asset" }

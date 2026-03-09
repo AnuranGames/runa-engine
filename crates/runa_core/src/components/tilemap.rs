@@ -153,14 +153,14 @@ impl Tilemap {
     /// Конвертировать координаты тайла → мировые координаты центра тайла
     pub fn tile_to_world(&self, tile_x: i32, tile_y: i32) -> Vec3 {
         Vec3::new(
-            (tile_x as f32 + 0.5) * self.tile_size.x as f32,
-            (tile_y as f32 + 0.5) * self.tile_size.y as f32,
+            (tile_x as f32) * self.tile_size.x as f32,
+            (tile_y as f32) * self.tile_size.y as f32,
             0.0,
         )
     }
 }
 
-/// Компонент рендеринга тайлмапа
+/// Rendering Component for Tilemap
 #[derive(Clone)]
 pub struct TilemapRenderer;
 

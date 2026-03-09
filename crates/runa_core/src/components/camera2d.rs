@@ -22,24 +22,60 @@ impl Camera2D {
             position: Vec2::ZERO,
             zoom: 1.0,
             virtual_size: Vec2::new(vw / 10.0, vh / 10.0),
-            viewport_size: (800, 600),
+            viewport_size: (1280, 720),
             aspect_correction: 1.0,
         };
         camera.update_aspect_correction();
         camera
     }
 
+    pub fn render_size(&self) -> (u32, u32) {
+        if self.virtual_size == Vec2::new(0.0, 0.0) {
+            // Use window size directly
+            self.viewport_size
+        } else {
+            // Use virtual size
+            (self.virtual_size.x as u32, self.virtual_size.y as u32)
+        }
+    }
+
+    pub fn scale_factor(&self) -> f32 {
+        let (render_width, render_height) = self.render_size();
+        let window_width = self.viewport_size.0 as f32;
+        let window_height = self.viewport_size.1 as f32;
+
+        // Use uniform scaling (preserve aspect ratio)
+        let scale_x = window_width / render_width as f32;
+        let scale_y = window_height / render_height as f32;
+
+        scale_x.min(scale_y)
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.viewport_size = (width.max(1), height.max(1));
+    }
+
     pub fn matrix(&self) -> Mat4 {
-        let half_w = self.virtual_size.x * 0.5 / self.zoom;
-        let half_h = self.virtual_size.y * 0.5 / self.zoom;
+        let (render_width, render_height) = self.render_size();
 
-        // Инвертируем Y для WebGPU (экранная система координат)
-        let proj = Mat4::orthographic_lh(
-            -half_w, half_w, -half_h, half_h, // ← поменяли местами!
-            -1000.0, 1000.0,
-        );
+        // Calculate visible world size based on zoom
+        let world_width = render_width as f32 * self.zoom;
+        let world_height = render_height as f32 * self.zoom;
 
-        let view = Mat4::from_translation(Vec3::new(-self.position.x, -self.position.y, 0.0));
+        // Create orthographic projection
+        // Maps world units to render pixels
+        let left = -world_width * 0.5;
+        let right = world_width * 0.5;
+        let bottom = -world_height * 0.5;
+        let top = world_height * 0.5;
+
+        let proj = Mat4::orthographic_rh_gl(left, right, bottom, top, -1000.0, 1000.0);
+
+        // Create view matrix (camera transform)
+        let view =
+            Mat4::from_translation(Vec2::new(-self.position.x, -self.position.y).extend(0.0));
+
+        // Combine projection and view
         proj * view
     }
 
