@@ -80,15 +80,17 @@ runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v
 
 ```rust
 // main.rs
-use runa_app::{RunaApp, RunaWindowConfig};
-use runa_core::World;
+use runa_engine::runa_app::{RunaApp, RunaWindowConfig};
+use runa_engine::runa_core::World;
+use runa_engine::{runa_asset, runa_core};
 
-use runa_core::Vec3;
-use runa_core::{
+use runa_engine::runa_core::Vec3;
+use runa_engine::runa_core::{
     components::{SpriteRenderer, Transform},
     input_system::*,
     ocs::Script,
 };
+
 
 fn main() {
     // Create a new empty world to hold game objects and systems
