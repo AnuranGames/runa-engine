@@ -1,0 +1,13 @@
+[package]
+name = "runa_engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+runa_app = { path = "../runa_app" }
+runa_core = { path = "../runa_core" }
+runa_asset = { path = "../runa_asset" }
+
+glam.workspace = true
