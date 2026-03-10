@@ -1,4 +1,4 @@
-use glam::{Mat4, Vec2, Vec3};
+use glam::{Mat4, Vec2};
 
 /// Camera component
 #[derive(Debug, Copy, Clone, Default)]

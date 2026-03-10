@@ -1,6 +1,5 @@
 use crate::components::Transform;
 use crate::ocs::Script;
-use crate::ocs::World;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 

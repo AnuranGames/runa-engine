@@ -1,3 +1,4 @@
+use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
@@ -34,6 +35,7 @@ pub struct Renderer<'window> {
     queue: wgpu::Queue,
 
     sprite_pipeline: SpritePipeline,
+
     mesh_pipeline: MeshPipeline,
 
     vertex_buffer: wgpu::Buffer,
@@ -54,7 +56,7 @@ pub struct Renderer<'window> {
 }
 
 impl<'window> Renderer<'window> {
-    pub async fn new_async(window: Arc<Window>) -> Self {
+    pub async fn new_async(window: Arc<Window>, vsync: bool) -> Self {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
         let adapter = instance
@@ -81,17 +83,31 @@ impl<'window> Renderer<'window> {
 
         let size = window.inner_size();
 
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_capabilities(&adapter).formats[0],
-            width: size.width.max(1),
-            height: size.height.max(1),
-            // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
-            present_mode: wgpu::PresentMode::Immediate, // вместо Fifo
-            alpha_mode: surface.get_capabilities(&adapter).alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
+        let surface_config: wgpu::SurfaceConfiguration;
+        if vsync {
+            surface_config = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: surface.get_capabilities(&adapter).formats[0],
+                width: size.width.max(1),
+                height: size.height.max(1),
+                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+                view_formats: vec![],
+                desired_maximum_frame_latency: 2,
+            };
+        } else {
+            surface_config = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: surface.get_capabilities(&adapter).formats[0],
+                width: size.width.max(1),
+                height: size.height.max(1),
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+                view_formats: vec![],
+                desired_maximum_frame_latency: 2,
+            };
+        }
+
         surface.configure(&device, &surface_config);
 
         let sprite_pipeline = SpritePipeline::new(&device, surface_config.format);
@@ -174,8 +190,8 @@ impl<'window> Renderer<'window> {
         }
     }
 
-    pub fn new(window: Arc<Window>) -> Self {
-        pollster::block_on(Self::new_async(window))
+    pub fn new(window: Arc<Window>, vsync: bool) -> Self {
+        pollster::block_on(Self::new_async(window, vsync))
     }
 
     pub fn resize(&mut self, new_size: (u32, u32)) {
@@ -210,6 +226,8 @@ impl<'window> Renderer<'window> {
             Err(_) => return,
         };
 
+        let t0 = Instant::now();
+
         let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor {
@@ -232,6 +250,9 @@ impl<'window> Renderer<'window> {
         // ===== ШАГ 1: СБОРКА ВЕРШИН ПО ТЕКСТУРАМ =====
         let mut all_vertices = Vec::new();
         let mut draw_calls = Vec::new();
+
+        let t1 = Instant::now();
+        // println!("📦 Commands this frame: {}", queue.commands.len());
 
         for cmd in &queue.commands {
             match cmd {
@@ -473,6 +494,8 @@ impl<'window> Renderer<'window> {
             }
         }
 
+        let t2 = Instant::now();
+
         if all_vertices.len() > self.max_vertices {
             eprintln!("Too many vertices! Max: {}", self.max_vertices);
             return;
@@ -515,6 +538,7 @@ impl<'window> Renderer<'window> {
 
             // Кэшируем бинд-группу (создаётся ОДИН раз на текстуру)
             let bind_group = self.bind_group_cache.entry(texture_key).or_insert_with(|| {
+                println!("⚠️  CREATING NEW BIND_GROUP for texture {}", texture_key);
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.sprite_pipeline.bind_group_layout,
                     entries: &[
@@ -550,8 +574,18 @@ impl<'window> Renderer<'window> {
             rpass.draw(0..vertex_count as u32, 0..1);
         }
 
+        let t3 = Instant::now();
+
+        println!(
+            "Prep: {:.2}ms | Write (cmd): {:.2}ms | Render: {:.2}ms",
+            (t1 - t0).as_secs_f32() * 1000.,
+            (t2 - t1).as_secs_f32() * 1000.,
+            (t3 - t2).as_secs_f32() * 1000.
+        );
+
         drop(rpass);
         self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::Poll);
         surface_texture.present();
     }
 }

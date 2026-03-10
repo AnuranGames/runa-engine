@@ -25,6 +25,8 @@ impl GpuTexture {
             view_formats: &[],
         });
 
+        // println!("📤 Uploading texture...");
+
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,

@@ -17,11 +17,12 @@ fn main() {
 
     // Configure the application window
     let config = RunaWindowConfig {
-        title: "Sandbox".to_string(),
+        title: "Runa Sandbox".to_string(),
         width: 1280,
         height: 720,
         fullscreen: false,
-        vsync: true,
+        vsync: false,
+        show_fps_in_title: true,
     };
 
     // Launch the engine with the configured world and window settings

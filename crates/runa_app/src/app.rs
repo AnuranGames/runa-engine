@@ -15,6 +15,29 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+#[derive(Debug, Clone)]
+pub struct RunaWindowConfig {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
+    pub fullscreen: bool,
+    pub vsync: bool,
+    pub show_fps_in_title: bool,
+}
+
+impl Default for RunaWindowConfig {
+    fn default() -> Self {
+        Self {
+            title: "Runa Game".to_string(),
+            width: 1280,
+            height: 720,
+            fullscreen: false,
+            vsync: true,
+            show_fps_in_title: false,
+        }
+    }
+}
+
 pub struct App<'window> {
     pub window: Option<Arc<Window>>,
     pub renderer: Option<Renderer<'window>>,
@@ -26,25 +49,26 @@ pub struct App<'window> {
     pub last_time: Instant,
     pub accumulator: f32,
     pub frame_count: u32,
+    pub current_fps: f32,
     pub last_fps_update: Instant,
-
-    pub is_fullscreen: bool,
     pub interaction_system: InteractionSystem,
 
     pub console: Console,
+
+    pub config: RunaWindowConfig,
 }
 
 impl<'window> App<'window> {
     fn toggle_fullscreen(&mut self) {
         if let Some(window) = &self.window {
-            self.is_fullscreen = !self.is_fullscreen;
+            self.config.fullscreen = !self.config.fullscreen;
 
-            if self.is_fullscreen {
-                // Вход в полноэкранный режим
+            if self.config.fullscreen {
+                // Open fullscreen
                 let fullscreen = Some(Fullscreen::Borderless(window.current_monitor()));
                 window.set_fullscreen(fullscreen);
             } else {
-                // Выход из полноэкранного режима
+                // Close fullscreen
                 window.set_fullscreen(None);
             }
         }
@@ -52,24 +76,31 @@ impl<'window> App<'window> {
 
     fn render(&mut self, interpolation_factor: f32) {
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
-            // Очищаем очередь
+            // Clear queue
             self.queue.clear();
 
-            // Собираем команды
+            // Compile render commands
             self.world.render(&mut self.queue, interpolation_factor);
 
-            // Рендерим
+            // Rendering
             renderer.draw(&self.queue, self.camera.matrix(), self.camera.virtual_size);
 
-            // Обновляем FPS
+            // Update FPS
             self.frame_count += 1;
             let now = Instant::now();
             if now.duration_since(self.last_fps_update).as_secs_f32() >= 1.0 {
-                let fps = self.frame_count as f32
+                self.current_fps = self.frame_count as f32
                     / now.duration_since(self.last_fps_update).as_secs_f32();
                 self.frame_count = 0;
                 self.last_fps_update = now;
-                window.set_title(&format!("Runa Sandbox - {:.1} FPS", fps));
+                if self.config.show_fps_in_title {
+                    window.set_title(&format!(
+                        "{} - {:.1} FPS",
+                        self.config.title, self.current_fps
+                    ));
+                } else {
+                    window.set_title(&format!("{}", self.config.title));
+                }
             }
         }
     }
@@ -78,15 +109,24 @@ impl<'window> App<'window> {
 impl<'window> ApplicationHandler for App<'window> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
-            let win_attr = Window::default_attributes().with_title("Runa Sandbox");
+            let win_attr =
+                Window::default_attributes().with_title(&format!("{}", self.config.title));
             // use Arc.
             let window = Arc::new(
                 event_loop
                     .create_window(win_attr)
                     .expect("create window err."),
             );
+            if self.config.fullscreen {
+                // Open fullscreen
+                let fullscreen = Some(Fullscreen::Borderless(window.current_monitor()));
+                window.set_fullscreen(fullscreen);
+            } else {
+                // Close fullscreen
+                window.set_fullscreen(None);
+            }
             self.window = Some(window.clone());
-            let renderer = Renderer::new(window.clone());
+            let renderer = Renderer::new(window.clone(), self.config.vsync);
             self.renderer = Some(renderer);
         }
     }
@@ -116,14 +156,6 @@ impl<'window> ApplicationHandler for App<'window> {
             self.accumulator -= FIXED_TIMESTEP;
         }
 
-        let interpolation_factor = (self.accumulator / FIXED_TIMESTEP).min(1.0);
-
-        // Запрашиваем перерисовку
-        if let Some(window) = &self.window {
-            window.request_redraw();
-            self.render(interpolation_factor);
-        }
-
         // Update console
         self.console.handle_input();
         self.console.render(&mut self.queue, &self.camera);
@@ -135,6 +167,14 @@ impl<'window> ApplicationHandler for App<'window> {
         } else {
             // When console is visible, still process input for the world
             // but scripts can check if console is visible and decide whether to respond
+        }
+
+        let interpolation_factor = (self.accumulator / FIXED_TIMESTEP).min(1.0);
+
+        // Запрашиваем перерисовку
+        if let Some(window) = &self.window {
+            window.request_redraw();
+            self.render(interpolation_factor);
         }
     }
 
@@ -158,13 +198,7 @@ impl<'window> ApplicationHandler for App<'window> {
                     window.request_redraw();
                 }
             }
-            WindowEvent::RedrawRequested => {
-                if let Some(wgpu_ctx) = self.renderer.as_mut() {
-                    if let Ok(frame) = wgpu_ctx.surface.get_current_texture() {
-                        frame.present();
-                    }
-                }
-            }
+            WindowEvent::RedrawRequested => {}
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -228,7 +262,6 @@ impl<'window> ApplicationHandler for App<'window> {
                     input_state.mouse_buttons_just_pressed.remove(&button);
                 }
             }
-
             _ => (),
         }
     }

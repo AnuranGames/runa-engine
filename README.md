@@ -62,18 +62,18 @@ cargo run --example sandbox
 
 ### Create a new game project with Runa:
 
-    Create project:
+Create project:
 
 ```sh
 cargo new my_game
 cd my_game
 ```
 
-    Add dependencies:
+Add dependencies:
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.1.0-alpha.3" }
+runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.1.1-alpha.1" }
 ```
 
 ### Create Your Game with Player Script

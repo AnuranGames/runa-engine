@@ -1,38 +1,17 @@
 use std::time::Instant;
 
-use runa_core::{components::Camera2D, ocs::Script, systems::InteractionSystem, Console, World};
+use runa_core::{components::Camera2D, systems::InteractionSystem, Console, World};
 use winit::{
     error::EventLoopError,
     event_loop::{ControlFlow, EventLoop},
 };
 
-use crate::app::App;
+use crate::app::{App, RunaWindowConfig};
 
 /// Default Runa App to start Application
 pub struct RunaApp {}
 
 pub trait GameState {}
-
-#[derive(Debug, Clone)]
-pub struct RunaWindowConfig {
-    pub title: String,
-    pub width: u32,
-    pub height: u32,
-    pub fullscreen: bool,
-    pub vsync: bool,
-}
-
-impl Default for RunaWindowConfig {
-    fn default() -> Self {
-        Self {
-            title: "Runa Game".to_string(),
-            width: 1280,
-            height: 720,
-            fullscreen: false,
-            vsync: true,
-        }
-    }
-}
 
 impl RunaApp {
     /// Run Runa application with config (fullscreen ?, vsync ?, screensize ? etc.)
@@ -64,9 +43,10 @@ impl RunaApp {
             accumulator: 0.0,
             frame_count: 0,
             last_fps_update: Instant::now(),
-            is_fullscreen: config.fullscreen,
             interaction_system,
             console,
+            config,
+            current_fps: 0.0,
         };
 
         event_loop.run_app(&mut app)
@@ -102,9 +82,10 @@ impl RunaApp {
             accumulator: 0.0,
             frame_count: 0,
             last_fps_update: Instant::now(),
-            is_fullscreen: RunaWindowConfig::default().fullscreen,
             interaction_system,
             console,
+            config: RunaWindowConfig::default(),
+            current_fps: 0.0,
         };
 
         event_loop.run_app(&mut app)
