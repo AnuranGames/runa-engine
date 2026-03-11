@@ -74,10 +74,12 @@ impl<'window> App<'window> {
         }
     }
 
-    fn render(&mut self, interpolation_factor: f32) {
+    fn render(&mut self) {
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
             // Clear queue
             self.queue.clear();
+
+            let interpolation_factor = (self.accumulator / (1.0 / 60.0)).min(1.0);
 
             // Compile render commands
             self.world.render(&mut self.queue, interpolation_factor);
@@ -169,12 +171,9 @@ impl<'window> ApplicationHandler for App<'window> {
             // but scripts can check if console is visible and decide whether to respond
         }
 
-        let interpolation_factor = (self.accumulator / FIXED_TIMESTEP).min(1.0);
-
         // Запрашиваем перерисовку
         if let Some(window) = &self.window {
             window.request_redraw();
-            self.render(interpolation_factor);
         }
     }
 
@@ -198,7 +197,9 @@ impl<'window> ApplicationHandler for App<'window> {
                     window.request_redraw();
                 }
             }
-            WindowEvent::RedrawRequested => {}
+            WindowEvent::RedrawRequested => {
+                self.render();
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
