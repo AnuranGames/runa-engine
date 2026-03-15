@@ -1,4 +1,3 @@
-//use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
@@ -13,18 +12,21 @@ use wgpu::{MemoryHints::Performance, Trace};
 use wgpu::{Texture, TextureView};
 use winit::window::Window;
 
+/// Per-instance data for sprite/tile rendering.
+/// Contains transform, UV coordinates, and flip information.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceData {
     pub position: [f32; 3],  // x, y, z
     pub rotation: f32,       // radians
     pub scale: [f32; 3],     // x, y, z
-    pub uv_offset: [f32; 2], // left-bottom UV
-    pub uv_size: [f32; 2],   // size UV-quad
-    pub flip: u32,           // 0 = flip_x, 1 = flip_y
+    pub uv_offset: [f32; 2], // left-bottom UV coordinates
+    pub uv_size: [f32; 2],   // UV quad size
+    pub flip: u32,           // bit 0 = flip_x, bit 1 = flip_y
     pub _pad: f32,
 }
 
+/// Vertex structure for sprite quads.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -32,6 +34,7 @@ pub struct Vertex {
     pub tex_coords: [f32; 2],
 }
 
+/// Global uniform buffer data containing view-projection matrix and aspect ratio.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Globals {
@@ -40,6 +43,7 @@ pub struct Globals {
     pub _padding: [f32; 7],
 }
 
+/// Main renderer struct managing GPU resources and rendering.
 pub struct Renderer<'window> {
     pub surface: wgpu::Surface<'window>,
     surface_config: wgpu::SurfaceConfiguration,
@@ -49,9 +53,6 @@ pub struct Renderer<'window> {
     sprite_pipeline: SpritePipeline,
 
     mesh_pipeline: MeshPipeline,
-
-    vertex_buffer: wgpu::Buffer,
-    max_vertices: usize,
 
     globals_buffer: wgpu::Buffer,
 
@@ -66,12 +67,20 @@ pub struct Renderer<'window> {
     depth_view: TextureView,
     depth_texture: Texture,
 
-    quad_buffer: wgpu::Buffer,     // базовый квад (6 вершин, не меняется)
-    instance_buffer: wgpu::Buffer, // буфер инстансов
-    max_instances: usize,
+    /// Base quad vertices (6 vertices, static).
+    quad_buffer: wgpu::Buffer,
+    /// Dynamic instance buffer - resized as needed.
+    instance_buffer: wgpu::Buffer,
+    /// Current capacity of instance buffer in number of instances.
+    instance_buffer_capacity: usize,
 }
 
 impl<'window> Renderer<'window> {
+    /// Creates a new renderer with the given window and vsync setting.
+    ///
+    /// # Arguments
+    /// * `window` - The window to render to
+    /// * `vsync` - Enable vertical sync for frame presentation
     pub async fn new_async(window: Arc<Window>, vsync: bool) -> Self {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
@@ -128,17 +137,6 @@ impl<'window> Renderer<'window> {
 
         let sprite_pipeline = SpritePipeline::new(&device, surface_config.format);
 
-        const MAX_SPRITES: usize = 1000;
-        const VERTICES_PER_SPRITE: usize = 6;
-        let max_vertices = MAX_SPRITES * VERTICES_PER_SPRITE;
-        let vertex_buffer_size = (std::mem::size_of::<Vertex>() * max_vertices) as u64;
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Sprite Vertex Buffer"),
-            size: vertex_buffer_size,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
         let identity_mat = glam::Mat4::IDENTITY.to_cols_array_2d();
         let globals = Globals {
             view_proj: identity_mat,
@@ -179,7 +177,7 @@ impl<'window> Renderer<'window> {
 
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // 3D пайплайн
+        // 3D mesh pipeline
         let mesh_pipeline = MeshPipeline::new(
             &device,
             surface_config.format,
@@ -219,11 +217,11 @@ impl<'window> Renderer<'window> {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        // Инстанс-буфер (максимум 1000 спрайтов)
-        const MAX_INSTANCES: usize = 1000;
+        // Instance buffer with initial capacity
+        const INITIAL_INSTANCE_CAPACITY: usize = 1000;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: (std::mem::size_of::<InstanceData>() * MAX_INSTANCES) as u64,
+            size: (std::mem::size_of::<InstanceData>() * INITIAL_INSTANCE_CAPACITY) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -235,8 +233,6 @@ impl<'window> Renderer<'window> {
             queue,
             sprite_pipeline,
             mesh_pipeline,
-            vertex_buffer,
-            max_vertices,
             globals_buffer,
             textures: HashMap::new(),
             nearest_sampler,
@@ -247,21 +243,23 @@ impl<'window> Renderer<'window> {
             depth_texture,
             quad_buffer,
             instance_buffer,
-            max_instances: MAX_INSTANCES,
+            instance_buffer_capacity: INITIAL_INSTANCE_CAPACITY,
         }
     }
 
+    /// Creates a new renderer synchronously (blocking).
     pub fn new(window: Arc<Window>, vsync: bool) -> Self {
         pollster::block_on(Self::new_async(window, vsync))
     }
 
+    /// Resizes the surface and recreates the depth texture.
     pub fn resize(&mut self, new_size: (u32, u32)) {
         let (width, height) = new_size;
         self.surface_config.width = width.max(1);
         self.surface_config.height = height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
 
-        // Пересоздаём глубинный буфер
+        // Recreate depth texture
         self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: self.surface_config.width,
@@ -281,13 +279,17 @@ impl<'window> Renderer<'window> {
             .create_view(&wgpu::TextureViewDescriptor::default());
     }
 
-    pub fn draw(&mut self, queue: &RenderQueue, camera_matrix: glam::Mat4, _virtual_size: Vec2) {
+    /// Renders the current frame using the provided render queue and camera matrix.
+    ///
+    /// # Arguments
+    /// * `queue` - The render queue containing draw commands
+    /// * `camera_matrix` - View-projection matrix for the camera
+    /// * `virtual_size` - Virtual resolution size for aspect ratio calculation
+    pub fn draw(&mut self, queue: &RenderQueue, camera_matrix: glam::Mat4, virtual_size: Vec2) {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(tex) => tex,
             Err(_) => return,
         };
-
-        //let t0 = Instant::now();
 
         let view = surface_texture
             .texture
@@ -296,20 +298,19 @@ impl<'window> Renderer<'window> {
                 ..Default::default()
             });
 
-        // Обновляем глобальные данные
+        // Update global uniform data
         self.queue.write_buffer(
             &self.globals_buffer,
             0,
             bytemuck::bytes_of(&Globals {
                 view_proj: camera_matrix.to_cols_array_2d(),
-                aspect: (_virtual_size.x / _virtual_size.y)
+                aspect: (virtual_size.x / virtual_size.y)
                     / (self.surface_config.width as f32 / self.surface_config.height as f32),
                 _padding: [0.0; 7],
             }),
         );
 
-        // ===== ШАГ 1: СБОРКА ВЕРШИН ПО ТЕКСТУРАМ =====
-        let mut all_vertices = Vec::new();
+        // ===== STEP 1: COLLECT INSTANCES BY TEXTURE =====
         let mut all_instances = Vec::new();
         let mut batches = Vec::new();
 
@@ -330,10 +331,9 @@ impl<'window> Renderer<'window> {
                         position: [position.x, position.y, position.z],
                         rotation: rotation.z,
                         scale: [world_scale_x, world_scale_y, 1.0],
-
-                        uv_offset: [0.0, 0.0], // начинаем с левого-нижнего угла
-                        uv_size: [1.0, 1.0],   // используем полный размер
-                        flip: 0,               // без флипа
+                        uv_offset: [0.0, 0.0],
+                        uv_size: [1.0, 1.0],
+                        flip: 0,
                         _pad: 0.0,
                     };
 
@@ -350,17 +350,15 @@ impl<'window> Renderer<'window> {
                     texture,
                     position,
                     size,
-                    uv_rect, // [x, y, w, h] в 0..1
+                    uv_rect,
                     flip_x,
                     flip_y,
                     color: _,
                 } => {
                     let instance = InstanceData {
                         position: [position.x, position.y, position.z],
-                        rotation: 0.0, // тайлы обычно не вращаются
+                        rotation: 0.0,
                         scale: [size.x as f32, size.y as f32, 1.0],
-
-                        // UV-данные для тайла
                         uv_offset: [uv_rect[0], uv_rect[1]],
                         uv_size: [uv_rect[2], uv_rect[3]],
                         flip: ((*flip_x) as u32) | (((*flip_y) as u32) << 1),
@@ -372,107 +370,42 @@ impl<'window> Renderer<'window> {
                         self.textures_cache.insert(key, texture.clone());
                     }
 
-                    let offset = all_instances.len(); // тот же вектор, что и для спрайтов!
+                    let offset = all_instances.len();
                     all_instances.push(instance);
-                    batches.push((key, offset, 1)); // 1 инстанс = 1 тайл
+                    batches.push((key, offset, 1));
                 }
-                RenderCommands::DebugRect {
-                    position,
-                    size,
-                    color,
-                } => {
-                    // Создаем вершины для отладочного прямоугольника в 3D пространстве
-                    let half_width = size.x * 0.5;
-                    let half_height = size.y * 0.5;
-
-                    let rect_vertices: [Vertex; 6] = [
-                        // Треугольник 1
-                        Vertex {
-                            position: [
-                                position.x - half_width,
-                                position.y + half_height,
-                                position.z,
-                            ],
-                            tex_coords: [0.0, 0.0],
-                        },
-                        Vertex {
-                            position: [
-                                position.x + half_width,
-                                position.y + half_height,
-                                position.z,
-                            ],
-                            tex_coords: [1.0, 0.0],
-                        },
-                        Vertex {
-                            position: [
-                                position.x - half_width,
-                                position.y - half_height,
-                                position.z,
-                            ],
-                            tex_coords: [0.0, 1.0],
-                        },
-                        // Треугольник 2
-                        Vertex {
-                            position: [
-                                position.x + half_width,
-                                position.y - half_height,
-                                position.z,
-                            ],
-                            tex_coords: [1.0, 1.0],
-                        },
-                        Vertex {
-                            position: [
-                                position.x + half_width,
-                                position.y + half_height,
-                                position.z,
-                            ],
-                            tex_coords: [1.0, 0.0],
-                        },
-                        Vertex {
-                            position: [
-                                position.x - half_width,
-                                position.y - half_height,
-                                position.z,
-                            ],
-                            tex_coords: [0.0, 1.0],
-                        },
-                    ];
-
-                    let vertex_offset = all_vertices.len();
-                    all_vertices.extend(rect_vertices);
-
-                    // Для отладочного рендеринга используем специальный вызов отрисовки
-                    // Временно пропускаем этот вызов, так как у нас нет специальной шейдерной программы для отладочных примитивов
-                    // draw_calls.push((0, vertex_offset, rect_vertices.len())); // 0 как специальный ключ для отладочных примитивов
+                RenderCommands::DebugRect { .. } => {
+                    // Debug rectangles are not yet implemented
                 }
                 RenderCommands::Text { .. } => {
-                    // TODO: реализовать текст
+                    // TODO: implement text rendering
                 }
             }
         }
 
-        // Записываем ВСЕ инстансы ОДИН раз
+        // Resize instance buffer if needed
+        if all_instances.len() > self.instance_buffer_capacity {
+            // Grow buffer by 1.5x to reduce reallocations
+            let new_capacity = (all_instances.len() * 3 / 2).max(1000);
+            self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Instance Buffer"),
+                size: (std::mem::size_of::<InstanceData>() * new_capacity) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.instance_buffer_capacity = new_capacity;
+        }
+
+        // Write all instances to GPU buffer
         if !all_instances.is_empty() {
             self.queue.write_buffer(
                 &self.instance_buffer,
                 0,
-                bytemuck::cast_slice(&all_instances[..all_instances.len().min(self.max_instances)]),
+                bytemuck::cast_slice(&all_instances),
             );
         }
 
-        //let t2 = Instant::now();
-
-        if all_vertices.len() > self.max_vertices {
-            eprintln!("Too many vertices! Max: {}", self.max_vertices);
-            return;
-        }
-
-        if !all_vertices.is_empty() {
-            self.queue
-                .write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&all_vertices));
-        }
-
-        // ===== ШАГ 2: РЕНДЕРИНГ БАТЧЕЙ =====
+        // ===== STEP 2: RENDER BATCHES =====
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -493,8 +426,7 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        // Устанавливаем бинд-группу (берём первую текстуру из кэша)
-        // ===== ШАГ 2: РЕНДЕРИНГ СПРАЙТОВ (ИНСТАНСИНГ) =====
+        // Render each texture batch using instancing
         for (texture_key, instance_offset, instance_count) in batches {
             let gpu_texture = self.textures.entry(texture_key).or_insert_with(|| {
                 let texture = self.textures_cache.get(&texture_key).unwrap();
@@ -526,21 +458,12 @@ impl<'window> Renderer<'window> {
             rpass.set_bind_group(0, &*bind_group, &[]);
             rpass.set_vertex_buffer(0, self.quad_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            // ← КЛЮЧЕВОЕ: рендерим инстансы с правильным смещением
+            // Draw instanced: 6 vertices per quad, instanced over the batch range
             rpass.draw(
                 0..6,
                 instance_offset as u32..(instance_offset + instance_count) as u32,
             );
         }
-
-        //let t3 = Instant::now();
-
-        // println!(
-        //     "Prep: {:.2}ms | Write (cmd): {:.2}ms | Render: {:.2}ms",
-        //     (t1 - t0).as_secs_f32() * 1000.,
-        //     (t2 - t1).as_secs_f32() * 1000.,
-        //     (t3 - t2).as_secs_f32() * 1000.
-        // );
 
         drop(rpass);
         self.queue.submit(Some(encoder.finish()));
