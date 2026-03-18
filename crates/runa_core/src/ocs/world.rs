@@ -80,7 +80,7 @@ impl World {
                 let interpolated_rotation = transform.previous_rotation
                     + (transform.rotation - transform.previous_rotation) * interpolation_factor;
 
-                render_queue.push_sprite(
+                render_queue.draw_sprite(
                     Arc::from(sprite.get_texture_handle()),
                     interpolated_position,
                     interpolated_rotation,
@@ -110,7 +110,7 @@ impl World {
                                 let world_pos = tilemap.tile_to_world(x, y);
                                 let final_pos = transform.position + world_pos;
 
-                                render_queue.push_tile(
+                                render_queue.draw_tile(
                                     tile.texture.clone().unwrap(),
                                     final_pos,
                                     tilemap.tile_size,
