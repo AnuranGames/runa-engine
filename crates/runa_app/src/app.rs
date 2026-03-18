@@ -133,9 +133,10 @@ impl<'window> ApplicationHandler for App<'window> {
                     }
                 }
             } else {
-                match runa_asset::load_window_icon(
-                    "D:/coding/projects/runa-engine/crates/runa_app/assets/icon.png",
-                ) {
+                match runa_asset::load_window_icon(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/icon.png"
+                )) {
                     Ok(icon) => {
                         window.set_window_icon(Some(icon));
                     }
