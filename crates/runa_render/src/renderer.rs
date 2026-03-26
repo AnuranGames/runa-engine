@@ -318,6 +318,80 @@ impl<'window> Renderer<'window> {
             .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::bytes_of(&ui_uniforms));
     }
 
+    /// Renders a 3D mesh with the given vertices and indices
+    fn render_mesh3D(
+        &mut self,
+        vertices: &[runa_render_api::Vertex3D],
+        indices: &[u32],
+        model_matrix: glam::Mat4,
+        color: [f32; 4],
+        view: &wgpu::TextureView,
+    ) {
+        // Create encoder for 3D rendering
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("3D Mesh Encoder"),
+            });
+
+        // Begin render pass
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("3D Mesh Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load, // Load existing content (don't clear)
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        // Set pipeline
+        rpass.set_pipeline(&self.mesh_pipeline.pipeline);
+
+        // Create vertex and index buffers
+        let vertex_data = bytemuck::cast_slice(vertices);
+        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Vertex Buffer"),
+            size: vertex_data.len() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&vertex_buffer, 0, vertex_data);
+
+        let index_data = bytemuck::cast_slice(indices);
+        let index_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Index Buffer"),
+            size: index_data.len() as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&index_buffer, 0, index_data);
+
+        // Set vertex and index buffers
+        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+        // Draw indexed
+        rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
+
+        drop(rpass);
+        self.queue.submit(Some(encoder.finish()));
+    }
+
     /// Renders the current frame using the provided render queue and camera matrix.
     pub fn draw(&mut self, queue: &RenderQueue, camera_matrix: glam::Mat4, virtual_size: Vec2) {
         let surface_texture = match self.surface.get_current_texture() {
@@ -345,6 +419,19 @@ impl<'window> Renderer<'window> {
             }),
         );
 
+        // First pass: Render 3D meshes (before 2D sprites)
+        for cmd in &queue.commands {
+            if let RenderCommands::Mesh3D {
+                vertices,
+                indices,
+                model_matrix,
+                color,
+            } = cmd
+            {
+                self.render_mesh3D(vertices, indices, *model_matrix, *color, &view);
+            }
+        }
+
         // Collect sprite instances and UI vertices
         let mut all_instances = Vec::new();
         let mut batches = Vec::new();
@@ -353,6 +440,9 @@ impl<'window> Renderer<'window> {
 
         for cmd in &queue.commands {
             match cmd {
+                RenderCommands::Mesh3D { .. } => {
+                    // Already rendered in the first pass
+                }
                 RenderCommands::Sprite {
                     texture,
                     position,

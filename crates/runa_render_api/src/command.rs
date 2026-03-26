@@ -1,7 +1,15 @@
-use glam::{Quat, Vec2};
-use glam::{USizeVec2, Vec3};
+use glam::USizeVec2;
+use glam::{Mat4, Quat, Vec2, Vec3};
 
 use runa_asset::TextureAsset;
+
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex3D {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+}
 
 pub enum RenderCommands {
     Sprite {
@@ -23,11 +31,17 @@ pub enum RenderCommands {
     },
     Tile {
         texture: std::sync::Arc<TextureAsset>,
-        position: Vec3,    // мировая позиция левого-нижнего угла
-        size: USizeVec2,   // размер тайла в мировых единицах
-        uv_rect: [f32; 4], // [x, y, width, height] в текстурных координатах (0.0-1.0)
+        position: Vec3,
+        size: USizeVec2,
+        uv_rect: [f32; 4],
         flip_x: bool,
         flip_y: bool,
-        color: [f32; 4], // RGBA тинт (1.0, 1.0, 1.0, 1.0 = без изменений)
+        color: [f32; 4],
+    },
+    Mesh3D {
+        vertices: Vec<Vertex3D>,
+        indices: Vec<u32>,
+        model_matrix: Mat4,
+        color: [f32; 4],
     },
 }

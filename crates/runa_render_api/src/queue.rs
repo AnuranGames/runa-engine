@@ -1,5 +1,6 @@
+use crate::command::Vertex3D;
 use crate::RenderCommands;
-use glam::{Quat, USizeVec2, Vec2, Vec3};
+use glam::{Mat4, Quat, USizeVec2, Vec2, Vec3};
 use runa_asset::TextureAsset;
 
 #[derive(Default)]
@@ -55,6 +56,21 @@ impl RenderQueue {
             uv_rect,
             flip_x,
             flip_y,
+            color,
+        });
+    }
+
+    pub fn draw_mesh3D(
+        &mut self,
+        vertices: Vec<Vertex3D>,
+        indices: Vec<u32>,
+        model_matrix: Mat4,
+        color: [f32; 4],
+    ) {
+        self.commands.push(RenderCommands::Mesh3D {
+            vertices,
+            indices,
+            model_matrix,
             color,
         });
     }
