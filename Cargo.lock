@@ -3874,6 +3874,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandbox_3d"
+version = "0.1.3-alpha.1"
+dependencies = [
+ "runa_app",
+ "runa_asset",
+ "runa_core",
+ "runa_render",
+ "runa_render_api",
+ "winit",
+]
+
+[[package]]
 name = "sandbox_soundtest"
 version = "0.1.3-alpha.1"
 dependencies = [

@@ -15,6 +15,7 @@ pub struct InputState {
     pub keys_just_pressed: HashSet<KeyCode>,
     // pub keys_just_released: HashSet<KeyCode>,
     pub mouse_position: (f32, f32),
+    pub mouse_previous_position: (f32, f32),
     pub mouse_buttons_pressed: HashSet<MouseButton>,
     pub mouse_buttons_just_pressed: HashSet<MouseButton>,
     // pub mouse_buttons_just_released: HashSet<MouseButton>,
@@ -55,6 +56,17 @@ impl InputState {
         input_state.mouse_buttons_just_pressed.clear();
         // input_state.mouse_buttons_just_released.clear();
         input_state.mouse_wheel_delta = 0.0;
+
+        // Update mouse previous position
+        input_state.mouse_previous_position = input_state.mouse_position;
+    }
+
+    pub fn get_mouse_delta() -> (f32, f32) {
+        let input_state = Self::current();
+        (
+            input_state.mouse_position.0 - input_state.mouse_previous_position.0,
+            input_state.mouse_position.1 - input_state.mouse_previous_position.1,
+        )
     }
 
     pub fn is_key_pressed(key: KeyCode) -> bool {
@@ -90,4 +102,9 @@ impl InputState {
             None
         }
     }
+}
+
+/// Get mouse movement delta since last frame
+pub fn get_mouse_delta() -> (f32, f32) {
+    InputState::get_mouse_delta()
 }

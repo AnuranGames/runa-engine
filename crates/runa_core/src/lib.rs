@@ -11,6 +11,7 @@ pub use console::Console;
 pub use ocs::World;
 
 pub mod input_system {
+    pub use crate::input::get_mouse_delta;
     pub use crate::input::InputState as Input;
     pub use winit::{event::MouseButton, keyboard::KeyCode};
 }

@@ -19,9 +19,9 @@ impl Mesh {
     pub fn cube(size: f32) -> Self {
         let h = size * 0.5;
 
-        // Вершины куба
+        // Вершины куба (6 граней × 4 вершины = 24 вершины)
         let vertices = vec![
-            // Передняя грань
+            // Передняя грань (z = h)
             Vertex3D {
                 position: [-h, -h, h],
                 normal: [0.0, 0.0, 1.0],
@@ -42,14 +42,122 @@ impl Mesh {
                 normal: [0.0, 0.0, 1.0],
                 uv: [0.0, 1.0],
             },
-            // ... остальные грани (6 граней × 4 вершины)
+            // Задняя грань (z = -h)
+            Vertex3D {
+                position: [-h, -h, -h],
+                normal: [0.0, 0.0, -1.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [-h, h, -h],
+                normal: [0.0, 0.0, -1.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, h, -h],
+                normal: [0.0, 0.0, -1.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [h, -h, -h],
+                normal: [0.0, 0.0, -1.0],
+                uv: [0.0, 1.0],
+            },
+            // Верхняя грань (y = h)
+            Vertex3D {
+                position: [-h, h, -h],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [-h, h, h],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, h, h],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [h, h, -h],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 1.0],
+            },
+            // Нижняя грань (y = -h)
+            Vertex3D {
+                position: [-h, -h, -h],
+                normal: [0.0, -1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, -h, -h],
+                normal: [0.0, -1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, -h, h],
+                normal: [0.0, -1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-h, -h, h],
+                normal: [0.0, -1.0, 0.0],
+                uv: [0.0, 1.0],
+            },
+            // Правая грань (x = h)
+            Vertex3D {
+                position: [h, -h, -h],
+                normal: [1.0, 0.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, h, -h],
+                normal: [1.0, 0.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [h, h, h],
+                normal: [1.0, 0.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [h, -h, h],
+                normal: [1.0, 0.0, 0.0],
+                uv: [0.0, 1.0],
+            },
+            // Левая грань (x = -h)
+            Vertex3D {
+                position: [-h, -h, -h],
+                normal: [-1.0, 0.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [-h, -h, h],
+                normal: [-1.0, 0.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [-h, h, h],
+                normal: [-1.0, 0.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-h, h, -h],
+                normal: [-1.0, 0.0, 0.0],
+                uv: [0.0, 1.0],
+            },
         ];
 
-        // Индексы для треугольников
+        // Индексы для 12 треугольников (2 на грань × 6 граней)
         let indices = vec![
-            0, 1, 2, 2, 3,
-            0, // передняя
-              // ... остальные индексы
+            // Передняя
+            0, 1, 2, 2, 3, 0, // Задняя
+            4, 5, 6, 6, 7, 4, // Верхняя
+            8, 9, 10, 10, 11, 8, // Нижняя
+            12, 13, 14, 14, 15, 12, // Правая
+            16, 17, 18, 18, 19, 16, // Левая
+            20, 21, 22, 22, 23, 20,
         ];
 
         Self {
