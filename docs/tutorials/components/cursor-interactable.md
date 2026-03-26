@@ -47,7 +47,7 @@ interactable.set_on_hover_exit(|| {
 
 ```rust
 // Check for clicks in your script's update method
-fn update(&mut self, object: &mut Object, _dt: f32, _world: &mut World) {
+fn update(&mut self, object: &mut Object, _dt: f32) {
     if let Some(interactable) = object.get_component::<CursorInteractable>() {
         if interactable.is_hovered && Input::is_mouse_button_just_pressed(MouseButton::Left) {
             println!("Clicked!");
@@ -82,15 +82,15 @@ impl Script for Button {
     fn construct(&self, object: &mut Object) {
         // Create interactable
         let mut interactable = CursorInteractable::new(200.0, 60.0);
-        
+
         interactable.set_on_hover_enter(|| {
             println!("Button hover!");
         });
-        
+
         interactable.set_on_hover_exit(|| {
             println!("Button unhover!");
         });
-        
+
         object
             .add_component(Transform::default())
             .add_component(SpriteRenderer {
@@ -105,7 +105,7 @@ impl Script for Button {
         }
     }
 
-    fn update(&mut self, object: &mut Object, _dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, _dt: f32) {
         if let Some(interactable) = object.get_component::<CursorInteractable>() {
             if interactable.is_hovered && Input::is_mouse_button_just_pressed(MouseButton::Left) {
                 println!("Button clicked!");
@@ -118,12 +118,12 @@ impl Script for Button {
 
 ## Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `is_hovered` | `bool` | Is mouse currently over the object |
-| `is_pressed` | `bool` | Is mouse button pressed while hovering |
+| Property      | Type   | Description                                        |
+| ------------- | ------ | -------------------------------------------------- |
+| `is_hovered`  | `bool` | Is mouse currently over the object                 |
+| `is_pressed`  | `bool` | Is mouse button pressed while hovering             |
 | `was_hovered` | `bool` | Was hovered last frame (for detecting transitions) |
-| `bounds_size` | `Vec3` | Half-size of the interaction area |
+| `bounds_size` | `Vec3` | Half-size of the interaction area                  |
 
 ## Methods
 

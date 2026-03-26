@@ -1,6 +1,6 @@
+use glam::Vec3;
 use runa_core::{
     components::{SpriteRenderer, Transform},
-    glam::Vec3,
     input_system::*,
     ocs::Script,
 };
@@ -25,15 +25,23 @@ impl Script for Player {
         _object
             .add_component(Transform::default())
             .add_component(SpriteRenderer {
-                texture: Some(runa_asset::load_image!("assets/art/Charactert.png")), // загрузка спрайта
+                texture: Some(runa_asset::loader::load_image("assets/Charactert.png")), // загрузка спрайта
             });
     }
 
     fn start(&mut self, _object: &mut runa_core::ocs::Object) {
         if let Some(transform) = _object.get_component_mut::<Transform>() {
             // стартовая позиция игрока
-            transform.position = Vec3::new(0.0, 0.0, 0.0);
-            transform.scale = Vec3::new(1.0, 1.0, 1.0);
+            transform.position = Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            };
+            transform.scale = Vec3 {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            };
         }
     }
 

@@ -83,8 +83,11 @@ impl<'window> App<'window> {
 
             let interpolation_factor = (self.accumulator / (1.0 / 60.0)).min(1.0);
 
-            // Compile render commands
+            // Compile render commands from world
             self.world.render(&mut self.queue, interpolation_factor);
+
+            // Render console on top (after clearing queue and world render)
+            self.console.render(&mut self.queue, &self.camera);
 
             // Rendering
             renderer.draw(&self.queue, self.camera.matrix(), self.camera.virtual_size);
@@ -191,10 +194,6 @@ impl<'window> ApplicationHandler for App<'window> {
             self.accumulator -= FIXED_TIMESTEP;
         }
 
-        // Update console
-        self.console.handle_input();
-        self.console.render(&mut self.queue, &self.camera);
-
         // Only process world input if console is not visible
         if !self.console.is_visible() {
             // Process interaction system
@@ -246,30 +245,20 @@ impl<'window> ApplicationHandler for App<'window> {
                 self.toggle_fullscreen();
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if let PhysicalKey::Code(key_code) = event.physical_key {
-                    let mut input_state = InputState::current_mut();
-                    if event.state == ElementState::Pressed {
-                        input_state.keys_pressed.insert(key_code);
-                        input_state.keys_just_pressed.insert(key_code);
-                    } else {
-                        input_state.keys_pressed.remove(&key_code);
-                        input_state.keys_just_pressed.remove(&key_code);
-                    }
-                    if key_code == KeyCode::Backquote {
-                        self.console.toggle();
-                    }
-                }
+                // First, let the console handle the input
+                self.console.handle_keyboard(&event, event.state);
 
-                // Handle text input for the console
-                if event.state == ElementState::Pressed && self.console.is_visible() {
-                    match event.logical_key {
-                        winit::keyboard::Key::Character(c) => {
-                            self.console.input_buffer.push_str(&c);
+                // Update global input state (only if console is not visible)
+                if !self.console.is_visible() {
+                    if let PhysicalKey::Code(key_code) = event.physical_key {
+                        let mut input_state = InputState::current_mut();
+                        if event.state == ElementState::Pressed {
+                            input_state.keys_pressed.insert(key_code);
+                            input_state.keys_just_pressed.insert(key_code);
+                        } else {
+                            input_state.keys_pressed.remove(&key_code);
+                            input_state.keys_just_pressed.remove(&key_code);
                         }
-                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab) => {
-                            self.console.input_buffer.push_str("    "); // Insert 4 spaces for tab
-                        }
-                        _ => {}
                     }
                 }
             }

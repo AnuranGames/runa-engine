@@ -18,7 +18,6 @@ A script is a Rust trait that defines how a game object behaves. Scripts have a 
 use runa_core::{
     ocs::Script,
     ocs::Object,
-    World,
 };
 
 pub struct MyScript {
@@ -49,7 +48,7 @@ impl Script for MyScript {
     }
 
     /// Called every frame
-    fn update(&mut self, object: &mut Object, dt: f32, world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         // Game logic goes here
         // dt = delta time in seconds
     }
@@ -62,7 +61,6 @@ impl Script for MyScript {
 use runa_core::{
     components::{SpriteRenderer, Transform},
     ocs::{Object, Script},
-    World,
     glam::Vec3,
 };
 
@@ -93,7 +91,7 @@ impl Script for RotatingSprite {
         }
     }
 
-    fn update(&mut self, object: &mut Object, dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         // Rotate the object
         if let Some(transform) = object.get_component_mut::<Transform>() {
             transform.rotate_z(self.rotation_speed * dt);
@@ -107,10 +105,10 @@ impl Script for RotatingSprite {
 ```rust
 fn main() {
     let mut world = World::default();
-    
+
     // Spawn your script
     world.spawn(Box::new(RotatingSprite::new()));
-    
+
     // ... rest of setup
 }
 ```
@@ -120,7 +118,7 @@ fn main() {
 Scripts can get and modify components on their object:
 
 ```rust
-fn update(&mut self, object: &mut Object, dt: f32, world: &mut World) {
+fn update(&mut self, object: &mut Object, dt: f32) {
     // Get a component (returns Option)
     if let Some(transform) = object.get_component::<Transform>() {
         println!("Position: {:?}", transform.position);
@@ -135,11 +133,11 @@ fn update(&mut self, object: &mut Object, dt: f32, world: &mut World) {
 
 ## Lifecycle Summary
 
-| Method | When Called | Use For |
-|--------|-------------|---------|
-| `construct()` | Once, before object enters world | Adding components |
-| `start()` | Once, on first frame | Initialization, finding other objects |
-| `update()` | Every frame | Game logic, movement, input |
+| Method        | When Called                      | Use For                               |
+| ------------- | -------------------------------- | ------------------------------------- |
+| `construct()` | Once, before object enters world | Adding components                     |
+| `start()`     | Once, on first frame             | Initialization, finding other objects |
+| `update()`    | Every frame                      | Game logic, movement, input           |
 
 ## Next Steps
 

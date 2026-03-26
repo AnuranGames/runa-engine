@@ -90,7 +90,7 @@ impl Player {
 }
 
 impl Script for Player {
-    fn update(&mut self, object: &mut Object, dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         if let Some(transform) = object.get_component_mut::<Transform>() {
             let mut direction = Vec3::ZERO;
 
@@ -138,20 +138,20 @@ impl Script for Button {
     fn construct(&self, object: &mut Object) {
         // Add interactable component
         let mut interactable = CursorInteractable::new(100.0, 50.0);
-        
+
         // Set up callbacks
         interactable.set_on_hover_enter(|| {
             println!("Mouse entered button!");
         });
-        
+
         interactable.set_on_hover_exit(|| {
             println!("Mouse exited button!");
         });
-        
+
         object.add_component(interactable);
     }
 
-    fn update(&mut self, object: &mut Object, _dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, _dt: f32) {
         if let Some(interactable) = object.get_component::<CursorInteractable>() {
             if interactable.is_hovered && Input::is_mouse_button_just_pressed(MouseButton::Left) {
                 println!("Button clicked!");
@@ -163,13 +163,13 @@ impl Script for Button {
 
 ## Input State Reference
 
-| Method | Description |
-|--------|-------------|
-| `Input::is_key_pressed(key)` | True while key is held |
-| `Input::is_key_just_pressed(key)` | True for one frame when pressed |
-| `Input::is_mouse_button_pressed(btn)` | True while button is held |
-| `Input::is_mouse_button_just_pressed(btn)` | True for one frame when clicked |
-| `Input::get_mouse_world_position()` | Mouse position in world coordinates |
+| Method                                     | Description                         |
+| ------------------------------------------ | ----------------------------------- |
+| `Input::is_key_pressed(key)`               | True while key is held              |
+| `Input::is_key_just_pressed(key)`          | True for one frame when pressed     |
+| `Input::is_mouse_button_pressed(btn)`      | True while button is held           |
+| `Input::is_mouse_button_just_pressed(btn)` | True for one frame when clicked     |
+| `Input::get_mouse_world_position()`        | Mouse position in world coordinates |
 
 ## Tips
 

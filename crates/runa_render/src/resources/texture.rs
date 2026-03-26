@@ -1,12 +1,15 @@
 use runa_asset::Handle;
 use runa_asset::TextureAsset;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct GpuTexture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
+
+pub type GpuTextureHandle = Arc<GpuTexture>;
 
 impl GpuTexture {
     pub fn from_asset(device: &wgpu::Device, queue: &wgpu::Queue, asset: &TextureAsset) -> Self {

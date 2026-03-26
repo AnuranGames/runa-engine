@@ -11,6 +11,7 @@ object.add_component(Transform::default());
 ```
 
 This creates a transform with:
+
 - Position: `(0, 0, 0)`
 - Rotation: No rotation
 - Scale: `(1, 1, 1)`
@@ -23,7 +24,7 @@ use runa_core::glam::Vec3;
 if let Some(transform) = object.get_component_mut::<Transform>() {
     // Set absolute position
     transform.position = Vec3::new(1.0, 2.0, 0.0);
-    
+
     // Move relative to current position
     transform.position.x += 0.5;
     transform.position.y += 0.5;
@@ -36,7 +37,7 @@ if let Some(transform) = object.get_component_mut::<Transform>() {
 if let Some(transform) = object.get_component_mut::<Transform>() {
     // Rotate around Z axis (2D rotation)
     transform.rotate_z(45.0); // 45 degrees
-    
+
     // Rotate around X or Y axis (3D)
     transform.rotate_x(30.0);
     transform.rotate_y(60.0);
@@ -77,7 +78,7 @@ impl Script for Mover {
         object.add_component(Transform::default());
     }
 
-    fn update(&mut self, object: &mut Object, dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         if let Some(transform) = object.get_component_mut::<Transform>() {
             // Move right at constant speed
             transform.position.x += self.speed * dt;
@@ -88,11 +89,11 @@ impl Script for Mover {
 
 ## Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `position` | `Vec3` | World position (x, y, z) |
-| `rotation` | `Quat` | Rotation as quaternion |
-| `scale` | `Vec3` | Scale factor (1, 1, 1 = normal size) |
+| Property   | Type   | Description                          |
+| ---------- | ------ | ------------------------------------ |
+| `position` | `Vec3` | World position (x, y, z)             |
+| `rotation` | `Quat` | Rotation as quaternion               |
+| `scale`    | `Vec3` | Scale factor (1, 1, 1 = normal size) |
 
 ## Tips
 

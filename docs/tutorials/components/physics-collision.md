@@ -35,7 +35,7 @@ use runa_core::glam::Vec2;
 if let Some(collision) = object.get_component::<PhysicsCollision>() {
     if let Some(transform) = object.get_component::<Transform>() {
         let point = Vec2::new(10.0, 20.0);
-        
+
         if collision.contains_point(point, transform.position.xy()) {
             println!("Point is inside collision box!");
         }
@@ -54,7 +54,7 @@ fn check_collision(object1: &Object, object2: &Object) -> bool {
         (Some(t), Some(c)) => (t, c),
         _ => return false,
     };
-    
+
     let (transform2, collision2) = match (
         object2.get_component::<Transform>(),
         object2.get_component::<PhysicsCollision>(),
@@ -62,17 +62,17 @@ fn check_collision(object1: &Object, object2: &Object) -> bool {
         (Some(t), Some(c)) => (t, c),
         _ => return false,
     };
-    
+
     // Simple AABB collision check
     let pos1 = transform1.position.xy();
     let pos2 = transform2.position.xy();
-    
+
     let dx = (pos1.x - pos2.x).abs();
     let dy = (pos1.y - pos2.y).abs();
-    
+
     let min_dx = collision1.size.x + collision2.size.x;
     let min_dy = collision1.size.y + collision2.size.y;
-    
+
     dx < min_dx && dy < min_dy
 }
 ```
@@ -105,7 +105,7 @@ impl Script for Player {
             .add_component(PhysicsCollision::new(32.0, 32.0));
     }
 
-    fn update(&mut self, object: &mut Object, dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         if let Some(transform) = object.get_component_mut::<Transform>() {
             let mut direction = Vec3::ZERO;
 
@@ -128,10 +128,10 @@ impl Script for Player {
 
             // Store old position for collision resolution
             let old_pos = transform.position;
-            
+
             // Move
             transform.position += direction * self.speed * dt;
-            
+
             // TODO: Check collision and resolve if needed
             // If collision detected, restore old_pos or slide along wall
         }
@@ -141,10 +141,10 @@ impl Script for Player {
 
 ## Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `size` | `Vec2` | Half-size (extents) of collision box |
-| `enabled` | `bool` | Are collisions active |
+| Property  | Type   | Description                          |
+| --------- | ------ | ------------------------------------ |
+| `size`    | `Vec2` | Half-size (extents) of collision box |
+| `enabled` | `bool` | Are collisions active                |
 
 ## Methods
 

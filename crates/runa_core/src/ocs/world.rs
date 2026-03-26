@@ -5,7 +5,7 @@ use runa_render_api::RenderQueue;
 
 use crate::{
     audio::{AudioEngine, SoundId},
-    components::{AudioSource, SpriteRenderer, Tilemap, Transform},
+    components::{AudioListener, AudioSource, SpriteRenderer, Tilemap, Transform},
     debug_renderer::DebugRenderer,
     ocs::{Object, Script},
 };
@@ -36,7 +36,13 @@ impl World {
         object.set_script(script);
 
         self.objects.push(object);
-        self.objects.get(self.objects.len() - 1).unwrap()
+
+        // Set world pointer using raw pointer (safe because world outlives objects)
+        let world_ptr = self as *mut World;
+        let object = self.objects.last_mut().unwrap();
+        object.set_world(unsafe { &mut *world_ptr });
+
+        object
     }
 
     pub fn construct(&mut self) {
@@ -44,7 +50,11 @@ impl World {
             .initialize()
             .expect("Failed to initialize audio engine");
 
+        // Set world pointers for all objects using raw pointer (safe because world outlives objects)
+        let world_ptr = self as *mut World;
         for object in &mut self.objects {
+            object.set_world(unsafe { &mut *world_ptr });
+
             if let Some(script) = object.script.take() {
                 script.construct(object);
                 object.script = Some(script);
@@ -53,10 +63,21 @@ impl World {
     }
 
     pub fn start(&mut self) {
+        // Set world pointers for all objects using raw pointer (safe because world outlives objects)
+        let world_ptr = self as *mut World;
         for object in &mut self.objects {
+            object.set_world(unsafe { &mut *world_ptr });
+
             if let Some(mut script) = object.script.take() {
                 script.start(object);
                 object.script = Some(script);
+            }
+
+            // Handle play_on_awake for AudioSource components
+            if let Some(audio) = object.get_component_mut::<AudioSource>() {
+                if audio.play_on_awake && audio.audio_asset.is_some() {
+                    audio.play_requested = true;
+                }
             }
         }
     }
@@ -68,16 +89,76 @@ impl World {
             }
         }
 
-        // Update scripts - pass world reference for audio and other systems
-        // Use raw pointers to work around borrow checker (safe because script.update doesn't outlive the call)
-        let world_ptr = self as *mut World;
+        // Update scripts
         let object_count = self.objects.len();
         for i in 0..object_count {
             if let Some(mut script) = self.objects[i].script.take() {
-                unsafe {
-                    script.update(&mut self.objects[i], dt, &mut *world_ptr);
-                }
+                script.update(&mut self.objects[i], dt);
                 self.objects[i].script = Some(script);
+            }
+        }
+
+        // Find active AudioListener and update listener position
+        let mut listener_found = false;
+        for object in &self.objects {
+            if let (Some(listener), Some(transform)) = (
+                object.get_component::<AudioListener>(),
+                object.get_component::<Transform>(),
+            ) {
+                if listener.active {
+                    self.audio_engine.set_listener(
+                        transform.position,
+                        transform.rotation,
+                        listener.volume,
+                    );
+                    self.audio_engine
+                        .set_stereo_separation(listener.stereo_separation);
+                    listener_found = true;
+                    break;
+                }
+            }
+        }
+
+        // If no active listener found, use default position
+        if !listener_found {
+            self.audio_engine
+                .set_listener(Vec3::ZERO, glam::Quat::IDENTITY, 1.0);
+        }
+
+        // Update spatial sound volumes based on listener position
+        self.audio_engine.update_spatial_volumes();
+
+        // Process audio requests (play/stop) from AudioSource components
+        for object in &mut self.objects {
+            // Get sound position for 3D audio first (to avoid borrow conflicts)
+            let sound_position = object.get_component::<Transform>().map(|t| t.position);
+
+            if let Some(audio) = object.get_component_mut::<AudioSource>() {
+                // Handle stop requests first
+                if audio.stop_requested {
+                    if let Some(sound_id) = audio.sound_id.take() {
+                        self.audio_engine.stop(sound_id);
+                    }
+                    audio.playing = false;
+                    audio.stop_requested = false;
+                }
+
+                // Handle play requests
+                if audio.play_requested && audio.audio_asset.is_some() {
+                    // Stop previous sound if still playing
+                    if let Some(sound_id) = audio.sound_id.take() {
+                        self.audio_engine.stop(sound_id);
+                    }
+
+                    // Play new sound with spatial positioning if needed
+                    let sound_id = self.audio_engine.play_spatial(audio, sound_position);
+
+                    if let Some(id) = sound_id {
+                        audio.sound_id = Some(id);
+                        audio.playing = true;
+                    }
+                    audio.play_requested = false;
+                }
             }
         }
 

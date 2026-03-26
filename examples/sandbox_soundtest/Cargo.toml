@@ -1,0 +1,14 @@
+[package]
+name = "sandbox_soundtest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+runa_render = { path = "../../crates/runa_render" }
+runa_asset = { path = "../../crates/runa_asset" }
+runa_render_api = { path = "../../crates/runa_render_api" }
+runa_core = { path = "../../crates/runa_core" }
+runa_app = { path = "../../crates/runa_app" }
+winit.workspace = true

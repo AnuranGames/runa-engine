@@ -1,5 +1,5 @@
 use crate::components::Transform;
-use crate::ocs::Script;
+use crate::ocs::{Script, World};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
@@ -8,6 +8,7 @@ pub struct Object {
     pub transform: Transform,
     components: HashMap<TypeId, Box<dyn Any>>,
     pub script: Option<Box<dyn Script>>,
+    world_ptr: *mut World,
 }
 
 impl Object {
@@ -17,6 +18,25 @@ impl Object {
             transform: Transform::default(),
             components: HashMap::new(),
             script: None,
+            world_ptr: std::ptr::null_mut(),
+        }
+    }
+
+    /// Set the world pointer for this object (called when object is added to world)
+    pub fn set_world(&mut self, world: &mut World) {
+        self.world_ptr = world as *mut World;
+    }
+
+    /// Get mutable reference to the world
+    ///
+    /// # Safety
+    /// This is safe to call as long as the object is part of a world and
+    /// no other mutable borrows of the world exist at the same time.
+    pub fn get_world_mut(&mut self) -> Option<&mut World> {
+        if self.world_ptr.is_null() {
+            None
+        } else {
+            Some(unsafe { &mut *self.world_ptr })
         }
     }
 

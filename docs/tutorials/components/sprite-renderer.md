@@ -69,7 +69,7 @@ impl Script for Player {
         }
     }
 
-    fn update(&mut self, object: &mut Object, dt: f32, _world: &mut World) {
+    fn update(&mut self, object: &mut Object, dt: f32) {
         // Player logic here
     }
 }
@@ -93,6 +93,7 @@ runa_asset::load_image!("assets/sprites/player.png")
 ## Supported Formats
 
 The engine supports common image formats:
+
 - PNG (recommended)
 - JPG
 - GIF

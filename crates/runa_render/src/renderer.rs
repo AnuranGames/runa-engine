@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    font::FontManager, pipelines::MeshPipeline, pipelines::SpritePipeline,
+    font::FontManager, pipelines::MeshPipeline, pipelines::SpritePipeline, pipelines::UIPipeline,
+    pipelines::UITexturedVertex, pipelines::UIUniforms, pipelines::UIVertex,
     resources::texture::GpuTexture,
 };
 use glam::Vec2;
@@ -54,9 +55,13 @@ pub struct Renderer<'window> {
 
     mesh_pipeline: MeshPipeline,
 
+    ui_pipeline: UIPipeline,
+    ui_uniform_buffer: wgpu::Buffer,
+    ui_bind_group: Option<wgpu::BindGroup>,
+
     globals_buffer: wgpu::Buffer,
 
-    textures: HashMap<usize, GpuTexture>,
+    textures: HashMap<usize, Arc<GpuTexture>>,
     nearest_sampler: wgpu::Sampler,
 
     font_manager: FontManager,
@@ -184,6 +189,29 @@ impl<'window> Renderer<'window> {
             wgpu::TextureFormat::Depth32Float,
         );
 
+        // UI pipeline for debug rectangles and text
+        let ui_pipeline = UIPipeline::new(&device, surface_config.format);
+
+        let ui_uniforms = UIUniforms {
+            screen_width: surface_config.width as f32,
+            screen_height: surface_config.height as f32,
+        };
+
+        let ui_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("UI Uniform Buffer"),
+            contents: bytemuck::bytes_of(&ui_uniforms),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let ui_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &ui_pipeline.bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ui_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("UI Bind Group"),
+        });
+
         const QUAD_VERTICES: &[Vertex] = &[
             Vertex {
                 position: [-0.5, -0.5, 0.0],
@@ -233,6 +261,9 @@ impl<'window> Renderer<'window> {
             queue,
             sprite_pipeline,
             mesh_pipeline,
+            ui_pipeline,
+            ui_uniform_buffer,
+            ui_bind_group: Some(ui_bind_group),
             globals_buffer,
             textures: HashMap::new(),
             nearest_sampler,
@@ -277,14 +308,17 @@ impl<'window> Renderer<'window> {
         self.depth_view = self
             .depth_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Update UI uniforms
+        let ui_uniforms = UIUniforms {
+            screen_width: self.surface_config.width as f32,
+            screen_height: self.surface_config.height as f32,
+        };
+        self.queue
+            .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::bytes_of(&ui_uniforms));
     }
 
     /// Renders the current frame using the provided render queue and camera matrix.
-    ///
-    /// # Arguments
-    /// * `queue` - The render queue containing draw commands
-    /// * `camera_matrix` - View-projection matrix for the camera
-    /// * `virtual_size` - Virtual resolution size for aspect ratio calculation
     pub fn draw(&mut self, queue: &RenderQueue, camera_matrix: glam::Mat4, virtual_size: Vec2) {
         let surface_texture = match self.surface.get_current_texture() {
             Ok(tex) => tex,
@@ -310,9 +344,11 @@ impl<'window> Renderer<'window> {
             }),
         );
 
-        // ===== STEP 1: COLLECT INSTANCES BY TEXTURE =====
+        // Collect sprite instances and UI vertices
         let mut all_instances = Vec::new();
         let mut batches = Vec::new();
+        let mut ui_vertices = Vec::new();
+        let mut ui_text_vertices = Vec::new();
 
         for cmd in &queue.commands {
             match cmd {
@@ -374,18 +410,124 @@ impl<'window> Renderer<'window> {
                     all_instances.push(instance);
                     batches.push((key, offset, 1));
                 }
-                RenderCommands::DebugRect { .. } => {
-                    // Debug rectangles are not yet implemented
+                RenderCommands::DebugRect {
+                    position,
+                    size,
+                    color,
+                } => {
+                    // Generate quad vertices for debug rectangle
+                    // position is center, convert to top-left
+                    let left = position.x - size.x / 2.0;
+                    let top = position.y - size.y / 2.0;
+                    let right = left + size.x;
+                    let bottom = top + size.y;
+
+                    eprintln!(
+                        "UI DebugRect: screen pos=({},{}) size=({},{}) -> vertices: ({},{}) to ({},{})",
+                        position.x, position.y, size.x, size.y, left, top, right, bottom
+                    );
+
+                    // Two triangles for the rectangle
+                    ui_vertices.extend_from_slice(&[
+                        UIVertex {
+                            position: [left, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [left, bottom],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [left, bottom],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, bottom],
+                            color: *color,
+                        },
+                    ]);
                 }
-                RenderCommands::Text { .. } => {
-                    // TODO: implement text rendering
+                RenderCommands::Text {
+                    text,
+                    position,
+                    color,
+                    size,
+                } => {
+                    // Render text using textured quads with font atlas
+                    let (char_width, char_height) = self.font_manager.char_size();
+                    let char_w = *size * char_width as f32;
+                    let char_h = *size * char_height as f32;
+                    let mut x = position.x;
+                    let y = position.y;
+
+                    for ch in text.chars() {
+                        if ch == ' ' {
+                            x += char_w;
+                            continue;
+                        }
+
+                        // Get UV coordinates for this character from atlas
+                        if let Some(char_uv) = self.font_manager.get_char_uv(ch) {
+                            // Generate textured quad for character
+                            let left = x;
+                            let top = y;
+                            let right = x + char_w;
+                            let bottom = y + char_h;
+
+                            // Two triangles with UV coordinates from atlas
+                            ui_text_vertices.extend_from_slice(&[
+                                UITexturedVertex {
+                                    position: [left, top],
+                                    tex_coords: [char_uv.u, char_uv.v],
+                                    color: *color,
+                                },
+                                UITexturedVertex {
+                                    position: [right, top],
+                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                    color: *color,
+                                },
+                                UITexturedVertex {
+                                    position: [left, bottom],
+                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                    color: *color,
+                                },
+                                UITexturedVertex {
+                                    position: [left, bottom],
+                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                    color: *color,
+                                },
+                                UITexturedVertex {
+                                    position: [right, top],
+                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                    color: *color,
+                                },
+                                UITexturedVertex {
+                                    position: [right, bottom],
+                                    tex_coords: [
+                                        char_uv.u + char_uv.u_width,
+                                        char_uv.v + char_uv.v_height,
+                                    ],
+                                    color: *color,
+                                },
+                            ]);
+                        }
+
+                        x += char_w;
+                    }
                 }
             }
         }
 
         // Resize instance buffer if needed
         if all_instances.len() > self.instance_buffer_capacity {
-            // Grow buffer by 1.5x to reduce reallocations
             let new_capacity = (all_instances.len() * 3 / 2).max(1000);
             self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Instance Buffer"),
@@ -405,7 +547,7 @@ impl<'window> Renderer<'window> {
             );
         }
 
-        // ===== STEP 2: RENDER BATCHES =====
+        // ===== RENDER PASS =====
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -413,7 +555,7 @@ impl<'window> Renderer<'window> {
             });
 
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Sprite Pass"),
+            label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 resolve_target: None,
@@ -426,12 +568,15 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        // Render each texture batch using instancing
+        // Render sprite batches
         for (texture_key, instance_offset, instance_count) in batches {
-            let gpu_texture = self.textures.entry(texture_key).or_insert_with(|| {
+            // Get GPU texture from textures cache
+            if !self.textures.contains_key(&texture_key) {
                 let texture = self.textures_cache.get(&texture_key).unwrap();
-                GpuTexture::from_asset(&self.device, &self.queue, texture)
-            });
+                let gpu_tex = Arc::new(GpuTexture::from_asset(&self.device, &self.queue, texture));
+                self.textures.insert(texture_key, gpu_tex);
+            }
+            let gpu_texture = self.textures.get(&texture_key).unwrap().clone();
 
             let bind_group = self.bind_group_cache.entry(texture_key).or_insert_with(|| {
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -458,11 +603,78 @@ impl<'window> Renderer<'window> {
             rpass.set_bind_group(0, &*bind_group, &[]);
             rpass.set_vertex_buffer(0, self.quad_buffer.slice(..));
             rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            // Draw instanced: 6 vertices per quad, instanced over the batch range
             rpass.draw(
                 0..6,
                 instance_offset as u32..(instance_offset + instance_count) as u32,
             );
+        }
+
+        // Render UI (debug rects) in the same render pass
+        if !ui_vertices.is_empty() {
+            eprintln!("UI: rendering {} vertices", ui_vertices.len());
+
+            // Create vertex buffer for UI
+            let ui_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("UI Vertex Buffer"),
+                size: (std::mem::size_of::<UIVertex>() * ui_vertices.len()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue
+                .write_buffer(&ui_vertex_buffer, 0, bytemuck::cast_slice(&ui_vertices));
+
+            rpass.set_pipeline(&self.ui_pipeline.pipeline);
+            rpass.set_bind_group(0, self.ui_bind_group.as_ref().unwrap(), &[]);
+            rpass.set_vertex_buffer(0, ui_vertex_buffer.slice(..));
+            rpass.draw(0..ui_vertices.len() as u32, 0..1);
+        }
+
+        // Render textured UI (text) in the same render pass
+        if !ui_text_vertices.is_empty() {
+            eprintln!("UI Text: rendering {} vertices", ui_text_vertices.len());
+
+            // Create vertex buffer for textured UI
+            let ui_text_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("UI Text Vertex Buffer"),
+                size: (std::mem::size_of::<UITexturedVertex>() * ui_text_vertices.len()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(
+                &ui_text_vertex_buffer,
+                0,
+                bytemuck::cast_slice(&ui_text_vertices),
+            );
+
+            // Create bind group for text using font atlas
+            if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
+                let text_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &self.ui_pipeline.textured_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.ui_uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&atlas_tex.view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.nearest_sampler),
+                        },
+                    ],
+                    label: Some("Text Bind Group"),
+                });
+
+                rpass.set_pipeline(&self.ui_pipeline.textured_pipeline);
+                rpass.set_bind_group(0, &text_bind_group, &[]);
+                rpass.set_vertex_buffer(0, ui_text_vertex_buffer.slice(..));
+                rpass.draw(0..ui_text_vertices.len() as u32, 0..1);
+                eprintln!("UI Text: draw call submitted with atlas texture");
+            } else {
+                eprintln!("UI Text: ERROR - no font atlas texture available!");
+            }
         }
 
         drop(rpass);

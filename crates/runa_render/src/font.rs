@@ -1,112 +1,255 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::resources::texture::GpuTexture;
-use glam::Vec2;
 use runa_asset::TextureAsset;
-use runa_render_api::RenderCommands;
 use wgpu::{Device, Queue};
 
+/// UV coordinates for a character in the atlas
+#[derive(Clone, Copy)]
+pub struct CharUV {
+    pub u: f32,
+    pub v: f32,
+    pub u_width: f32,
+    pub v_height: f32,
+}
+
 pub struct FontManager {
-    // Character texture cache
-    textures: HashMap<char, GpuTexture>,
+    // Character atlas texture (all characters in one texture)
+    atlas_texture: Option<Arc<GpuTexture>>,
+    // Character UV coordinates in the atlas
+    char_uvs: HashMap<char, CharUV>,
     // Character dimensions
     char_width: u32,
     char_height: u32,
     // Character spacing
     spacing: f32,
+    // Atlas dimensions
+    atlas_width: u32,
+    atlas_height: u32,
 }
 
 impl FontManager {
     pub fn new(device: &Device, queue: &Queue) -> Self {
-        // Create a basic 8x8 pixel font
+        // Create a simple 8x8 pixel font atlas
+        // Atlas will contain ASCII characters 32-126 (95 characters)
+        // Arranged in a 16x6 grid (16 columns, 6 rows = 96 slots)
+        let char_width = 8u32;
+        let char_height = 8u32;
+        let cols = 16u32;
+        let rows = 6u32;
+        let atlas_width = cols * char_width; // 128 pixels
+        let atlas_height = rows * char_height; // 48 pixels
+
         let mut font_manager = Self {
-            textures: HashMap::new(),
-            char_width: 8,
-            char_height: 8,
+            atlas_texture: None,
+            char_uvs: HashMap::new(),
+            char_width,
+            char_height,
             spacing: 1.0,
+            atlas_width,
+            atlas_height,
         };
 
-        // Generate basic ASCII characters (space through tilde)
-        for c in 32u8..127 {
-            let ch = c as char;
-            if !font_manager.textures.contains_key(&ch) {
-                let texture = font_manager.generate_char_texture(device, queue, ch);
-                font_manager.textures.insert(ch, texture);
-            }
-        }
+        // Generate the atlas texture
+        let texture = font_manager.generate_atlas_texture(device, queue);
+        font_manager.atlas_texture = Some(Arc::new(texture));
 
         font_manager
     }
 
-    fn generate_char_texture(&self, device: &Device, queue: &Queue, ch: char) -> GpuTexture {
-        // Create a simple texture for the character
-        // For now, we'll create a placeholder texture
-        let width = self.char_width;
-        let height = self.char_height;
+    /// Generate the font atlas texture containing all characters
+    fn generate_atlas_texture(&mut self, device: &Device, queue: &Queue) -> GpuTexture {
+        let cols = self.atlas_width / self.char_width;
 
-        // Create a simple pattern for each character based on its ASCII value
-        let mut pixels = vec![0u8; (width * height * 4) as usize]; // RGBA
+        // Create pixel data for the entire atlas
+        let mut pixels = vec![0u8; (self.atlas_width * self.atlas_height * 4) as usize]; // RGBA
 
-        // Fill with a pattern based on the character
-        for y in 0..height {
-            for x in 0..width {
-                let idx = ((y * width + x) * 4) as usize;
+        // Generate bitmap font data for ASCII 32-126
+        let char_bitmaps: &[(u8, [u8; 8])] = &[
+            (b' ' as u8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (b'!' as u8, [0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x18, 0x00]),
+            (b'"' as u8, [0x36, 0x36, 0x36, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (b'#' as u8, [0x00, 0x36, 0x36, 0x7F, 0x36, 0x7F, 0x36, 0x36]),
+            (b'$' as u8, [0x08, 0x7F, 0x49, 0x2A, 0x12, 0x7F, 0x10, 0x00]),
+            (b'%' as u8, [0x00, 0x46, 0x4A, 0x08, 0x10, 0x28, 0x64, 0x00]),
+            (b'&' as u8, [0x30, 0x48, 0x30, 0x2A, 0x45, 0x42, 0x3D, 0x00]),
+            (
+                b'\'' as u8,
+                [0x18, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00],
+            ),
+            (b'(' as u8, [0x0C, 0x18, 0x30, 0x30, 0x30, 0x30, 0x18, 0x0C]),
+            (b')' as u8, [0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x0C, 0x18, 0x30]),
+            (b'*' as u8, [0x00, 0x08, 0x2A, 0x1C, 0x1C, 0x2A, 0x08, 0x00]),
+            (b'+' as u8, [0x00, 0x08, 0x08, 0x3E, 0x08, 0x08, 0x00, 0x00]),
+            (b',' as u8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30]),
+            (b'-' as u8, [0x00, 0x00, 0x00, 0x3E, 0x00, 0x00, 0x00, 0x00]),
+            (b'.' as u8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00]),
+            (b'/' as u8, [0x00, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x00]),
+            (b'0' as u8, [0x3C, 0x46, 0x4A, 0x52, 0x62, 0x46, 0x3C, 0x00]),
+            (b'1' as u8, [0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00]),
+            (b'2' as u8, [0x3C, 0x46, 0x02, 0x0C, 0x30, 0x40, 0x7E, 0x00]),
+            (b'3' as u8, [0x3C, 0x46, 0x02, 0x1C, 0x02, 0x46, 0x3C, 0x00]),
+            (b'4' as u8, [0x06, 0x0E, 0x1E, 0x26, 0x7F, 0x06, 0x06, 0x00]),
+            (b'5' as u8, [0x7E, 0x40, 0x7C, 0x02, 0x02, 0x46, 0x3C, 0x00]),
+            (b'6' as u8, [0x3C, 0x40, 0x7C, 0x46, 0x46, 0x46, 0x3C, 0x00]),
+            (b'7' as u8, [0x7E, 0x02, 0x04, 0x08, 0x10, 0x10, 0x10, 0x00]),
+            (b'8' as u8, [0x3C, 0x46, 0x46, 0x3C, 0x46, 0x46, 0x3C, 0x00]),
+            (b'9' as u8, [0x3C, 0x46, 0x46, 0x3E, 0x02, 0x04, 0x38, 0x00]),
+            (b':' as u8, [0x00, 0x00, 0x18, 0x18, 0x00, 0x18, 0x18, 0x00]),
+            (b';' as u8, [0x00, 0x00, 0x18, 0x18, 0x00, 0x18, 0x18, 0x30]),
+            (b'<' as u8, [0x04, 0x08, 0x10, 0x20, 0x10, 0x08, 0x04, 0x00]),
+            (b'=' as u8, [0x00, 0x00, 0x7E, 0x00, 0x00, 0x7E, 0x00, 0x00]),
+            (b'>' as u8, [0x20, 0x10, 0x08, 0x04, 0x08, 0x10, 0x20, 0x00]),
+            (b'?' as u8, [0x3C, 0x46, 0x02, 0x0C, 0x18, 0x00, 0x18, 0x00]),
+            (b'@' as u8, [0x3C, 0x46, 0x5C, 0x5A, 0x5A, 0x5C, 0x3C, 0x00]),
+            (b'A' as u8, [0x18, 0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x00]),
+            (b'B' as u8, [0x7C, 0x46, 0x46, 0x7C, 0x46, 0x46, 0x7C, 0x00]),
+            (b'C' as u8, [0x3C, 0x46, 0x40, 0x40, 0x40, 0x46, 0x3C, 0x00]),
+            (b'D' as u8, [0x78, 0x4C, 0x46, 0x46, 0x46, 0x4C, 0x78, 0x00]),
+            (b'E' as u8, [0x7E, 0x40, 0x40, 0x7C, 0x40, 0x40, 0x7E, 0x00]),
+            (b'F' as u8, [0x7E, 0x40, 0x40, 0x7C, 0x40, 0x40, 0x40, 0x00]),
+            (b'G' as u8, [0x3C, 0x46, 0x40, 0x4E, 0x46, 0x46, 0x3C, 0x00]),
+            (b'H' as u8, [0x66, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00]),
+            (b'I' as u8, [0x3C, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00]),
+            (b'J' as u8, [0x02, 0x02, 0x02, 0x02, 0x02, 0x46, 0x3C, 0x00]),
+            (b'K' as u8, [0x66, 0x4C, 0x38, 0x38, 0x38, 0x4C, 0x66, 0x00]),
+            (b'L' as u8, [0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x7E, 0x00]),
+            (b'M' as u8, [0x63, 0x77, 0x7F, 0x7F, 0x6B, 0x63, 0x63, 0x00]),
+            (b'N' as u8, [0x66, 0x66, 0x76, 0x7E, 0x6E, 0x66, 0x66, 0x00]),
+            (b'O' as u8, [0x3C, 0x46, 0x46, 0x46, 0x46, 0x46, 0x3C, 0x00]),
+            (b'P' as u8, [0x7C, 0x46, 0x46, 0x7C, 0x40, 0x40, 0x40, 0x00]),
+            (b'Q' as u8, [0x3C, 0x46, 0x46, 0x46, 0x4A, 0x4C, 0x36, 0x00]),
+            (b'R' as u8, [0x7C, 0x46, 0x46, 0x7C, 0x38, 0x4C, 0x66, 0x00]),
+            (b'S' as u8, [0x3C, 0x46, 0x40, 0x3C, 0x06, 0x46, 0x3C, 0x00]),
+            (b'T' as u8, [0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00]),
+            (b'U' as u8, [0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x00]),
+            (b'V' as u8, [0x66, 0x66, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00]),
+            (b'W' as u8, [0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00]),
+            (b'X' as u8, [0x66, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x66, 0x00]),
+            (b'Y' as u8, [0x66, 0x66, 0x66, 0x3C, 0x18, 0x18, 0x18, 0x00]),
+            (b'Z' as u8, [0x7E, 0x04, 0x08, 0x10, 0x20, 0x40, 0x7E, 0x00]),
+            (b'[' as u8, [0x3C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3C, 0x00]),
+            (
+                b'\\' as u8,
+                [0x00, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x00],
+            ),
+            (b']' as u8, [0x3C, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x3C, 0x00]),
+            (b'^' as u8, [0x18, 0x3C, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (b'_' as u8, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E]),
+            (b'`' as u8, [0x18, 0x1C, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            (b'a' as u8, [0x00, 0x00, 0x3C, 0x06, 0x3E, 0x46, 0x3E, 0x00]),
+            (b'b' as u8, [0x40, 0x40, 0x7C, 0x46, 0x46, 0x46, 0x7C, 0x00]),
+            (b'c' as u8, [0x00, 0x00, 0x3C, 0x40, 0x40, 0x46, 0x3C, 0x00]),
+            (b'd' as u8, [0x02, 0x02, 0x3E, 0x46, 0x46, 0x46, 0x3E, 0x00]),
+            (b'e' as u8, [0x00, 0x00, 0x3C, 0x46, 0x7E, 0x40, 0x3C, 0x00]),
+            (b'f' as u8, [0x0C, 0x18, 0x18, 0x7E, 0x18, 0x18, 0x18, 0x00]),
+            (b'g' as u8, [0x00, 0x00, 0x3E, 0x46, 0x46, 0x3E, 0x06, 0x3C]),
+            (b'h' as u8, [0x40, 0x40, 0x7C, 0x46, 0x46, 0x46, 0x46, 0x00]),
+            (b'i' as u8, [0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3C, 0x00]),
+            (b'j' as u8, [0x06, 0x00, 0x0E, 0x06, 0x06, 0x06, 0x06, 0x3C]),
+            (b'k' as u8, [0x40, 0x40, 0x46, 0x4C, 0x78, 0x4C, 0x46, 0x00]),
+            (b'l' as u8, [0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3C, 0x00]),
+            (b'm' as u8, [0x00, 0x00, 0x5A, 0x7F, 0x6B, 0x63, 0x63, 0x00]),
+            (b'n' as u8, [0x00, 0x00, 0x7C, 0x46, 0x46, 0x46, 0x46, 0x00]),
+            (b'o' as u8, [0x00, 0x00, 0x3C, 0x46, 0x46, 0x46, 0x3C, 0x00]),
+            (b'p' as u8, [0x00, 0x00, 0x7C, 0x46, 0x46, 0x7C, 0x40, 0x40]),
+            (b'q' as u8, [0x00, 0x00, 0x3E, 0x46, 0x46, 0x3E, 0x06, 0x06]),
+            (b'r' as u8, [0x00, 0x00, 0x6E, 0x38, 0x18, 0x18, 0x18, 0x00]),
+            (b's' as u8, [0x00, 0x00, 0x3E, 0x40, 0x3C, 0x06, 0x7C, 0x00]),
+            (b't' as u8, [0x18, 0x18, 0x7E, 0x18, 0x18, 0x1A, 0x0C, 0x00]),
+            (b'u' as u8, [0x00, 0x00, 0x46, 0x46, 0x46, 0x46, 0x3E, 0x00]),
+            (b'v' as u8, [0x00, 0x00, 0x66, 0x66, 0x66, 0x3C, 0x18, 0x00]),
+            (b'w' as u8, [0x00, 0x00, 0x63, 0x63, 0x6B, 0x7F, 0x3E, 0x00]),
+            (b'x' as u8, [0x00, 0x00, 0x66, 0x3C, 0x18, 0x3C, 0x66, 0x00]),
+            (b'y' as u8, [0x00, 0x00, 0x66, 0x66, 0x66, 0x3E, 0x06, 0x3C]),
+            (b'z' as u8, [0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00]),
+            (b'{' as u8, [0x0E, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0E, 0x00]),
+            (b'|' as u8, [0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18]),
+            (b'}' as u8, [0x70, 0x18, 0x18, 0x0E, 0x18, 0x18, 0x70, 0x00]),
+            (b'~' as u8, [0x00, 0x00, 0x00, 0x6E, 0x31, 0x00, 0x00, 0x00]),
+        ];
 
-                // Create a simple pattern - white pixels for visible chars, black for space
-                let intensity = if ch != ' ' && (x % 2 == 0 || y % 2 == 0) {
-                    255
-                } else {
-                    0
-                };
+        // Process each character
+        for c in 32u8..127 {
+            let ch = c as char;
+            let char_idx = (c - 32) as usize;
 
-                pixels[idx] = intensity; // R
-                pixels[idx + 1] = intensity; // G
-                pixels[idx + 2] = intensity; // B
-                pixels[idx + 3] = 255; // A
+            // Calculate position in atlas grid
+            let col = (char_idx % cols as usize) as u32;
+            let row = (char_idx / cols as usize) as u32;
+
+            // Calculate UV coordinates
+            let u = (col * self.char_width) as f32 / self.atlas_width as f32;
+            let v = (row * self.char_height) as f32 / self.atlas_height as f32;
+            let u_width = self.char_width as f32 / self.atlas_width as f32;
+            let v_height = self.char_height as f32 / self.atlas_height as f32;
+
+            self.char_uvs.insert(
+                ch,
+                CharUV {
+                    u,
+                    v,
+                    u_width,
+                    v_height,
+                },
+            );
+
+            // Find bitmap for this character
+            let bitmap = char_bitmaps
+                .iter()
+                .find(|(code, _)| *code == c)
+                .map(|(_, bmp)| *bmp)
+                .unwrap_or([0x00; 8]);
+
+            // Draw character into atlas
+            for y in 0..self.char_height {
+                for x in 0..self.char_width {
+                    let atlas_x = col * self.char_width + x;
+                    let atlas_y = row * self.char_height + y;
+                    let idx = ((atlas_y * self.atlas_width + atlas_x) * 4) as usize;
+
+                    // Check if this pixel is set in the bitmap
+                    let bit = 7 - (x % 8);
+                    let pixel_on = (bitmap[y as usize] >> bit) & 1 != 0;
+
+                    let intensity = if pixel_on { 255 } else { 0 };
+
+                    pixels[idx] = intensity; // R
+                    pixels[idx + 1] = intensity; // G
+                    pixels[idx + 2] = intensity; // B
+                    pixels[idx + 3] = 255; // A
+                }
             }
         }
 
         // Create a temporary TextureAsset to pass to GpuTexture::from_asset
         let temp_asset = TextureAsset {
-            width,
-            height,
+            width: self.atlas_width,
+            height: self.atlas_height,
             pixels,
         };
 
         GpuTexture::from_asset(device, queue, &temp_asset)
     }
 
-    pub fn render_text(
-        &self,
-        text: &str,
-        position: Vec2,
-        color: [f32; 4],
-        size: f32,
-    ) -> Vec<RenderCommands> {
-        let mut commands = Vec::new();
+    /// Get the atlas texture
+    pub fn get_atlas_texture(&self) -> Option<&Arc<GpuTexture>> {
+        self.atlas_texture.as_ref()
+    }
 
-        let mut current_x = position.x;
-        let y = position.y;
+    /// Get UV coordinates for a character
+    pub fn get_char_uv(&self, ch: char) -> Option<CharUV> {
+        self.char_uvs.get(&ch).copied()
+    }
 
-        for ch in text.chars() {
-            if self.textures.contains_key(&ch) {
-                // Calculate position for this character
-                let char_pos = Vec2::new(current_x, y);
+    /// Get character dimensions
+    pub fn char_size(&self) -> (u32, u32) {
+        (self.char_width, self.char_height)
+    }
 
-                // Add a text command that will be handled by the renderer
-                // The renderer will need to know how to render each character
-                commands.push(RenderCommands::Text {
-                    text: ch.to_string(),
-                    position: char_pos,
-                    color,
-                    size,
-                });
-
-                // Move to next character position
-                current_x += (self.char_width as f32) * size * self.spacing;
-            }
-        }
-
-        commands
+    /// Get character spacing
+    pub fn spacing(&self) -> f32 {
+        self.spacing
     }
 }
