@@ -73,7 +73,7 @@ Add dependencies:
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.1.3-alpha.1" }
+runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.1" }
 ```
 
 ### Create Your Game with Player Script

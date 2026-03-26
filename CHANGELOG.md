@@ -5,59 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.1] - 2026-03-26
+
+### Added
+
+- **3D Camera System**
+  - `Camera3D` component with perspective projection
+  - `ActiveCamera` marker component for explicit camera selection
+  - Automatic camera fallback: ActiveCamera → First Camera3D → Warning
+  - Safe rendering when no camera present (black screen, no crash)
+
+- **Cursor Control API**
+  - `input_system::show_cursor()` - Show/hide cursor
+  - `input_system::lock_cursor()` - Lock/unlock cursor to window
+  - `input_system::set_cursor_mode()` - Combined cursor control
+  - Global access from anywhere in scripts
+
+- **3D Sandbox Example**
+  - `sandbox_3d` - First-person camera controller
+  - WASD movement + Space/Ctrl vertical movement
+  - Mouse look with locked cursor (right-click toggle)
+  - Inverted Y-axis for FPS-style control
+
+- **Input Improvements**
+  - `get_mouse_delta()` now uses `DeviceEvent::MouseMotion`
+  - Works correctly when cursor is locked
+  - No more input lag or single-frame issues
+
+### Changed
+
+- **Breaking:** Camera system now requires explicit camera component
+  - Removed automatic default camera creation
+  - Add `Camera3D` or `Camera2D` component to enable rendering
+  - Use `ActiveCamera` marker for explicit camera selection
+
+- **Breaking:** `AudioSource::play()` API
+  - Removed `world` parameter from `Script::update()`
+  - Audio playback via `audio.play()` instead of `world.play_sound()`
+  - `play_on_awake` flag for automatic playback
+
+- Version bumped to 0.2.0-alpha.1 (3D rendering milestone)
+
+### Documentation
+
+- Updated README.md with 3D camera examples
+- Added ActiveCamera usage guide
+- Updated cursor control documentation
+- Added troubleshooting for "No camera found" warning
+
 ## [0.1.3-alpha.1] - 2026-03-26
 
 ### Added
 
 - **3D Spatial Audio System**
-  - `AudioListener` component for camera/player (represents "ears" of audio system)
-  - Distance-based volume attenuation (inverse square law)
-  - Stereo panning based on sound position relative to listener
-  - `stereo_separation` parameter (0.0 = mono, 1.0 = full stereo)
-  - Dynamic volume updates without sound restart (no artifacts!)
-  - `AudioSource::new3d()` and `AudioSource::with_asset_3d()` constructors
-  - `min_distance` and `max_distance` for sound attenuation control
+  - `AudioListener` component for camera/player
+  - Distance-based volume attenuation
+  - Stereo panning simulation
+  - `stereo_separation` parameter
+
 - **AudioSource Improvements**
-  - `play_on_awake` flag for automatic playback on spawn
-  - `play()` and `stop()` methods on AudioSource component
-  - Internal flag-based system (`play_requested`, `stop_requested`)
-  - Sound ID tracking for managing playing sounds
-- **Object System**
-  - `Object::get_world_mut()` method for accessing world from object
-  - Internal `world_ptr` for system access (safe raw pointer usage)
-- **Script System**
-  - Simplified `Script::update()` signature (removed `world` parameter)
-  - Audio playback via `audio.play()` instead of `world.play_sound()`
-- **Examples**
-  - `sandbox_soundtest` example demonstrating 3D audio with left/right emitters
-  - Test scene with two spatial sound sources at different positions
+  - `play_on_awake` flag
+  - `play()` and `stop()` methods
+  - `min_distance` and `max_distance` controls
 
-### Fixed
-
-- Audio artifacts from sound restart - now uses `Player::set_volume()` for smooth volume changes
-- Borrow checker issues in `World::update()` with audio processing
-- Component import paths in examples
+- **sandbox_soundtest** example for audio testing
 
 ### Changed
 
-- **Breaking:** `Script::update(&mut self, object: &mut Object, dt: f32)` - removed `world` parameter
-- **Breaking:** Audio playback now via `AudioSource::play()` instead of `World::play_sound()`
-- AudioEngine now updates spatial volumes every frame without restarting sounds
-- `AudioListener` component required for 3D audio (auto-added to player/camera)
-- Only one active `AudioListener` at a time (first active is used)
-
-### Documentation
-
-- Updated `docs/tutorials/systems/audio.md` with 3D audio guide
-- Added examples for `AudioListener` setup
-- Documented `stereo_separation` parameter
-- Updated all tutorial examples to new API
-
-### Technical Notes
-
-- True stereo panning limited by rodio 0.22 (no `SpatialSink`)
-- Current implementation uses volume attenuation for directionality simulation
-- Future: upgrade audio backend for true left/right channel panning
+- `Script::update()` signature simplified (removed `world` parameter)
+- Audio playback via `AudioSource::play()` component method
 
 ## [Unreleased] %% 0.1.0 %%
 

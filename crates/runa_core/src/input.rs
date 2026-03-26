@@ -1,13 +1,15 @@
 use glam::Vec3;
 use std::{
     collections::HashSet,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, OnceLock, Weak},
 };
+use winit::window::{CursorGrabMode, Window};
 use winit::{event::MouseButton, keyboard::KeyCode};
 
 use crate::components::Camera2D;
 
 static INPUT_STATE: OnceLock<Mutex<InputState>> = OnceLock::new();
+static WINDOW_HANDLE: OnceLock<Mutex<Weak<Window>>> = OnceLock::new();
 
 #[derive(Default, Clone, Debug)]
 pub struct InputState {
@@ -16,6 +18,7 @@ pub struct InputState {
     // pub keys_just_released: HashSet<KeyCode>,
     pub mouse_position: (f32, f32),
     pub mouse_previous_position: (f32, f32),
+    pub mouse_delta: (f32, f32), // Relative mouse movement (for locked cursor)
     pub mouse_buttons_pressed: HashSet<MouseButton>,
     pub mouse_buttons_just_pressed: HashSet<MouseButton>,
     // pub mouse_buttons_just_released: HashSet<MouseButton>,
@@ -59,14 +62,14 @@ impl InputState {
 
         // Update mouse previous position
         input_state.mouse_previous_position = input_state.mouse_position;
+
+        // Reset mouse delta (will be set by MouseMoved event)
+        input_state.mouse_delta = (0.0, 0.0);
     }
 
     pub fn get_mouse_delta() -> (f32, f32) {
         let input_state = Self::current();
-        (
-            input_state.mouse_position.0 - input_state.mouse_previous_position.0,
-            input_state.mouse_position.1 - input_state.mouse_previous_position.1,
-        )
+        input_state.mouse_delta
     }
 
     pub fn is_key_pressed(key: KeyCode) -> bool {
@@ -107,4 +110,46 @@ impl InputState {
 /// Get mouse movement delta since last frame
 pub fn get_mouse_delta() -> (f32, f32) {
     InputState::get_mouse_delta()
+}
+
+// ===== Cursor Control =====
+
+/// Set the window handle for cursor control (call once at startup)
+pub fn set_window_handle(window: &std::sync::Arc<Window>) {
+    WINDOW_HANDLE
+        .set(Mutex::new(std::sync::Arc::downgrade(window)))
+        .ok();
+}
+
+/// Show or hide the cursor
+pub fn show_cursor(show: bool) {
+    if let Some(window_weak) = WINDOW_HANDLE.get() {
+        if let Ok(guard) = window_weak.lock() {
+            if let Some(window) = guard.upgrade() {
+                window.set_cursor_visible(show);
+            }
+        }
+    }
+}
+
+/// Lock or unlock the cursor to/from the window
+pub fn lock_cursor(lock: bool) {
+    if let Some(window_weak) = WINDOW_HANDLE.get() {
+        if let Ok(guard) = window_weak.lock() {
+            if let Some(window) = guard.upgrade() {
+                let grab_mode = if lock {
+                    CursorGrabMode::Locked
+                } else {
+                    CursorGrabMode::None
+                };
+                let _ = window.set_cursor_grab(grab_mode);
+            }
+        }
+    }
+}
+
+/// Convenience function to set cursor mode (useful for FPS games)
+pub fn set_cursor_mode(visible: bool, locked: bool) {
+    show_cursor(visible);
+    lock_cursor(locked);
 }

@@ -1,6 +1,8 @@
+// Uncomment to disable console in build
 // #![windows_subsystem = "windows"]
 
 use runa_app::{RunaApp, RunaWindowConfig};
+use runa_core::input_system;
 use runa_core::World;
 
 mod camera_controller;
@@ -13,12 +15,13 @@ fn main() {
     // Spawn 3D camera with controller
     world.spawn(Box::new(camera_controller::CameraController::new()));
 
-    // Spawn rotating 3D cube
+    // Spawn rotating 3D cube (sprite for now)
     world.spawn(Box::new(rotating_cube::RotatingCube::new()));
 
     // Configure the application window
     let config = RunaWindowConfig {
-        title: "Runa 3D Sandbox - WASD to move, Space/Ctrl for up/down, Mouse to look".to_string(),
+        title: "Runa 3D Sandbox - WASD to move, Space/Ctrl for up/down, Right-Click to look"
+            .to_string(),
         width: 1280,
         height: 720,
         fullscreen: false,
@@ -27,6 +30,10 @@ fn main() {
         window_icon: None,
     };
 
-    // Launch the engine with the configured world and window settings
+    // Launch the engine
     let _ = RunaApp::run_with_config(world, config);
+
+    // Restore cursor on exit
+    input_system::show_cursor(true);
+    input_system::lock_cursor(false);
 }

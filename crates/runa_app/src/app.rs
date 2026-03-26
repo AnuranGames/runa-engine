@@ -5,12 +5,12 @@ use runa_core::components::Camera2D;
 use runa_core::input::InputState;
 use runa_core::ocs::World;
 use runa_core::systems::InteractionSystem;
-use runa_core::Console;
+use runa_core::{glam, Console};
 use runa_render::Renderer;
 use runa_render_api::RenderQueue;
 
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
@@ -46,6 +46,8 @@ pub struct App<'window> {
 
     pub queue: RenderQueue,
     pub camera: Camera2D,
+    pub camera_matrix_override: Option<glam::Mat4>, // For Camera3D
+    pub active_camera_set: bool,                    // True if ActiveCamera was manually set
     pub world: World,
 
     pub last_time: Instant,
@@ -89,8 +91,11 @@ impl<'window> App<'window> {
             // Render console on top (after clearing queue and world render)
             self.console.render(&mut self.queue, &self.camera);
 
-            // Rendering
-            renderer.draw(&self.queue, self.camera.matrix(), self.camera.virtual_size);
+            // Rendering - use 3D matrix if available, otherwise use 2D camera matrix
+            let camera_matrix = self
+                .camera_matrix_override
+                .unwrap_or_else(|| self.camera.matrix());
+            renderer.draw(&self.queue, camera_matrix, self.camera.virtual_size);
 
             // Update FPS
             self.frame_count += 1;
@@ -109,6 +114,56 @@ impl<'window> App<'window> {
                     window.set_title(&format!("{}", self.config.title));
                 }
             }
+        }
+    }
+
+    /// Sync camera - finds ActiveCamera or first available camera
+    fn sync_camera3d(&mut self) {
+        use runa_core::components::{ActiveCamera, Camera3D};
+
+        // Reset state
+        self.camera_matrix_override = None;
+        self.active_camera_set = false;
+
+        // First pass: Look for ActiveCamera marker
+        for object in &self.world.objects {
+            if object.get_component::<ActiveCamera>().is_some() {
+                // This object is marked as active camera
+                if let Some(camera3d) = object.get_component::<Camera3D>() {
+                    // Create 3D matrix
+                    let aspect = camera3d.viewport_size.0 as f32 / camera3d.viewport_size.1 as f32;
+                    let proj = glam::Mat4::perspective_rh(
+                        camera3d.fov,
+                        aspect,
+                        camera3d.near,
+                        camera3d.far,
+                    );
+                    let view =
+                        glam::Mat4::look_at_rh(camera3d.position, camera3d.target, camera3d.up);
+                    self.camera_matrix_override = Some(proj * view);
+                    self.active_camera_set = true;
+                    return;
+                }
+                // ActiveCamera exists but no Camera3D
+                break;
+            }
+        }
+
+        // Second pass: Use first available Camera3D
+        for object in &self.world.objects {
+            if let Some(camera3d) = object.get_component::<Camera3D>() {
+                let aspect = camera3d.viewport_size.0 as f32 / camera3d.viewport_size.1 as f32;
+                let proj =
+                    glam::Mat4::perspective_rh(camera3d.fov, aspect, camera3d.near, camera3d.far);
+                let view = glam::Mat4::look_at_rh(camera3d.position, camera3d.target, camera3d.up);
+                self.camera_matrix_override = Some(proj * view);
+                return;
+            }
+        }
+
+        // No camera found - log warning, render black screen
+        if self.renderer.is_some() {
+            eprintln!("[WARNING] No camera found in the scene");
         }
     }
 }
@@ -164,6 +219,10 @@ impl<'window> ApplicationHandler for App<'window> {
                 window.set_fullscreen(None);
             }
             self.window = Some(window.clone());
+
+            // Set window handle for input system (cursor control)
+            runa_core::input_system::set_window_handle(&window);
+
             let renderer = Renderer::new(window.clone(), self.config.vsync);
             self.renderer = Some(renderer);
         }
@@ -190,6 +249,9 @@ impl<'window> ApplicationHandler for App<'window> {
 
             self.world.update(FIXED_TIMESTEP);
             InputState::update_frame();
+
+            // Sync Camera2D with Camera3D if present
+            self.sync_camera3d();
 
             self.accumulator -= FIXED_TIMESTEP;
         }
@@ -286,6 +348,19 @@ impl<'window> ApplicationHandler for App<'window> {
                 }
             }
             _ => (),
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        // Handle relative mouse movement (for locked cursor)
+        if let DeviceEvent::MouseMotion { delta } = event {
+            let mut input_state = InputState::current_mut();
+            input_state.mouse_delta = (delta.0 as f32, delta.1 as f32);
         }
     }
 }

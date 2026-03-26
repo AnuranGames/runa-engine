@@ -12,6 +12,10 @@ pub use ocs::World;
 
 pub mod input_system {
     pub use crate::input::get_mouse_delta;
+    pub use crate::input::lock_cursor;
+    pub use crate::input::set_cursor_mode;
+    pub use crate::input::set_window_handle;
+    pub use crate::input::show_cursor;
     pub use crate::input::InputState as Input;
     pub use winit::{event::MouseButton, keyboard::KeyCode};
 }

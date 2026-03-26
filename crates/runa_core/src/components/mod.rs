@@ -1,3 +1,4 @@
+pub mod active_camera;
 pub mod audio_listener;
 pub mod audio_source;
 mod camera2d;
@@ -10,6 +11,7 @@ mod sprite_renderer;
 mod tilemap;
 mod transform;
 
+pub use active_camera::ActiveCamera;
 pub use audio_listener::AudioListener;
 pub use audio_source::AudioSource;
 pub use camera2d::Camera2D;

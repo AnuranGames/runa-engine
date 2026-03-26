@@ -1,8 +1,11 @@
-use runa_core::components::Camera3D;
+use runa_core::components::{ActiveCamera, Camera3D};
 use runa_core::glam::Vec3;
+use runa_core::input_system;
 use runa_core::input_system::get_mouse_delta;
 use runa_core::input_system::{Input, KeyCode, MouseButton};
 use runa_core::ocs::{Object, Script};
+
+static mut CURSOR_LOCKED: bool = false;
 
 /// First-person camera controller for 3D navigation
 ///
@@ -17,7 +20,6 @@ pub struct CameraController {
     pitch: f32, // Vertical rotation (radians)
     speed: f32,
     sensitivity: f32,
-    mouse_sensitivity: f32,
 }
 
 impl CameraController {
@@ -27,8 +29,7 @@ impl CameraController {
             yaw: 0.0,
             pitch: 0.0,
             speed: 3.0,
-            sensitivity: 0.003,
-            mouse_sensitivity: 0.003,
+            sensitivity: 0.01,
         }
     }
 
@@ -57,17 +58,31 @@ impl Script for CameraController {
             far: 1000.0,
             viewport_size: (1280, 720),
         });
+
+        // Mark this object as the active camera
+        object.add_component(ActiveCamera);
     }
 
     fn update(&mut self, object: &mut Object, dt: f32) {
-        // Mouse look (hold right-click)
-        if Input::is_mouse_button_pressed(MouseButton::Right) {
-            let mouse_delta = get_mouse_delta();
-            self.yaw -= mouse_delta.0 * self.mouse_sensitivity;
-            self.pitch += mouse_delta.1 * self.mouse_sensitivity;
+        // Toggle cursor lock on right-click press
+        if Input::is_mouse_button_just_pressed(MouseButton::Right) {
+            unsafe {
+                CURSOR_LOCKED = !CURSOR_LOCKED;
+                input_system::show_cursor(!CURSOR_LOCKED);
+                input_system::lock_cursor(CURSOR_LOCKED);
+            }
+        }
 
-            // Clamp pitch to avoid flipping
-            self.pitch = self.pitch.clamp(-1.5, 1.5);
+        // Mouse look (when cursor is locked)
+        unsafe {
+            if CURSOR_LOCKED {
+                let mouse_delta = get_mouse_delta();
+                self.yaw -= mouse_delta.0 * self.sensitivity;
+                self.pitch -= mouse_delta.1 * self.sensitivity; // Inverted Y for FPS-style
+
+                // Clamp pitch to avoid flipping
+                self.pitch = self.pitch.clamp(-1.5, 1.5);
+            }
         }
 
         // Calculate movement direction

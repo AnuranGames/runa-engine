@@ -1,4 +1,4 @@
-use glam::{Mat4, Vec2};
+use glam::{Mat4, Vec2, Vec3};
 
 /// Camera component
 #[derive(Debug, Copy, Clone, Default)]
@@ -76,6 +76,20 @@ impl Camera2D {
             Mat4::from_translation(Vec2::new(-self.position.x, -self.position.y).extend(0.0));
 
         // Combine projection and view
+        proj * view
+    }
+
+    /// Create a 3D look-at matrix for Camera3D compatibility
+    pub fn matrix_3d(&self, target: Vec3, up: Vec3) -> Mat4 {
+        // Use perspective projection for 3D
+        let aspect = self.viewport_size.0 as f32 / self.viewport_size.1 as f32;
+        let fov = 75.0_f32.to_radians();
+        let near = 0.1;
+        let far = 1000.0;
+
+        let proj = Mat4::perspective_rh(fov, aspect, near, far);
+        let view = Mat4::look_at_rh(self.position.extend(0.0), target, up);
+
         proj * view
     }
 

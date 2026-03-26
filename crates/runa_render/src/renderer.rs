@@ -321,75 +321,19 @@ impl<'window> Renderer<'window> {
     /// Renders a 3D mesh with the given vertices and indices
     fn render_mesh3D(
         &mut self,
-        vertices: &[runa_render_api::Vertex3D],
-        indices: &[u32],
-        model_matrix: glam::Mat4,
-        color: [f32; 4],
-        view: &wgpu::TextureView,
+        _vertices: &[runa_render_api::Vertex3D],
+        _indices: &[u32],
+        _model_matrix: glam::Mat4,
+        _color: [f32; 4],
+        _view: &wgpu::TextureView,
     ) {
-        // Create encoder for 3D rendering
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("3D Mesh Encoder"),
-            });
-
-        // Begin render pass
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("3D Mesh Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load, // Load existing content (don't clear)
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-
-        // Set pipeline
-        rpass.set_pipeline(&self.mesh_pipeline.pipeline);
-
-        // Create vertex and index buffers
-        let vertex_data = bytemuck::cast_slice(vertices);
-        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Mesh Vertex Buffer"),
-            size: vertex_data.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.queue.write_buffer(&vertex_buffer, 0, vertex_data);
-
-        let index_data = bytemuck::cast_slice(indices);
-        let index_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Mesh Index Buffer"),
-            size: index_data.len() as u64,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.queue.write_buffer(&index_buffer, 0, index_data);
-
-        // Set vertex and index buffers
-        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        // Draw indexed
-        rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
-
-        drop(rpass);
-        self.queue.submit(Some(encoder.finish()));
+        // TODO: Implement proper 3D mesh rendering with bind groups
+        // For now, just log that we received the call
+        eprintln!(
+            "3D Mesh render call received (vertices: {}, indices: {})",
+            _vertices.len(),
+            _indices.len()
+        );
     }
 
     /// Renders the current frame using the provided render queue and camera matrix.

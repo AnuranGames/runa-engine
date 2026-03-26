@@ -26,8 +26,8 @@ impl RunaApp {
         runa_core::input::InputState::initialize();
         let interaction_system = InteractionSystem::new();
 
-        let mut camera = Camera2D::new(320.0, 180.0);
-        camera.resize(1280, 720);
+        // Default camera (will be overridden by world cameras if present)
+        let camera = Camera2D::default();
 
         world.construct();
         world.start();
@@ -39,6 +39,8 @@ impl RunaApp {
             renderer: None,
             queue: runa_render_api::RenderQueue::new(),
             camera,
+            camera_matrix_override: None,
+            active_camera_set: false,
             world,
             last_time: Instant::now(),
             accumulator: 0.0,
@@ -66,7 +68,8 @@ impl RunaApp {
         runa_core::input::InputState::initialize();
         let interaction_system = InteractionSystem::new();
 
-        let camera = Camera2D::new(320.0, 180.0);
+        // Default camera (will be overridden by world cameras if present)
+        let camera = Camera2D::default();
 
         world.construct();
         world.start();
@@ -78,6 +81,8 @@ impl RunaApp {
             renderer: None,
             queue: runa_render_api::RenderQueue::new(),
             camera,
+            camera_matrix_override: None,
+            active_camera_set: false,
             world,
             last_time: Instant::now(),
             accumulator: 0.0,
