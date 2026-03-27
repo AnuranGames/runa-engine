@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.2] - 2026-03-27
+
+### Added
+
+- **Unified Camera System**
+  - New `Camera` component supporting both 2D orthographic and 3D perspective projections
+  - `Camera::new_ortho()` - Simple 2D camera setup
+  - `Camera::new_perspective()` - Full 3D camera with position, target, FOV
+  - Automatic aspect ratio correction for proper rendering
+  - `screen_to_world()` conversion for accurate mouse input
+
+- **Documentation**
+  - Complete 2D game creation guide
+  - Complete 3D game creation guide with FPS controller
+  - Updated tutorials README with camera system documentation
+  - Quick start guides for both 2D and 3D development paths
+
+- **Input System**
+  - Proper camera integration for `get_mouse_world_position()`
+  - Aspect ratio correction in screen-to-world conversion
+  - Fixed cursor interaction with correct world coordinates
+
+### Changed
+
+- **Breaking:** Camera component refactored
+  - `Camera2D` and `Camera3D` deprecated in favor of unified `Camera`
+  - Old components remain for backward compatibility with deprecation warnings
+  - Migration path: Replace `Camera2D::new()` with `Camera::new_ortho()`
+  - Migration path: Replace `Camera3D { ... }` with `Camera::new_perspective()`
+
+- **Rendering Pipeline**
+  - Fixed depth-stencil attachment for sprite pipeline compatibility
+  - Proper depth buffer handling for mixed 2D/3D scenes
+  - Single render pass for all objects (no more multiple submit calls)
+  - Improved performance with batched rendering
+
+- **Interaction System**
+  - `InteractionSystem` now updates before scripts for accurate hover state
+  - Fixed `CursorInteractable` with proper camera integration
+  - Mouse drag now works correctly with aspect ratio correction
+
+### Fixed
+
+- Black screen in 2D scenes (ortho_size now properly calculated)
+- Mouse position offset in `CursorInteractable` (aspect ratio correction)
+- Depth-stencil format mismatch in sprite rendering
+- Camera viewport size not updating from active camera
+- Input system using wrong camera for world position
+
+### Deprecated
+
+- `Camera2D` - Use `Camera::new_ortho()` instead
+- `Camera3D` - Use `Camera::new_perspective()` instead
+
 ## [0.2.0-alpha.1] - 2026-03-26
 
 ### Added

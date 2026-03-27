@@ -74,10 +74,28 @@ Add dependencies:
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.1" }
+runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.2" }
 ```
 
-### Create Your Game with Player Script
+### Create a new game project with Runa:
+
+#### 2D Game Example
+
+Create project:
+
+```sh
+cargo new my_2d_game
+cd my_2d_game
+```
+
+Add dependencies:
+
+```toml
+[dependencies]
+runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.2" }
+```
+
+### Create Your 2D Game with Player Script
 
 ```rust
 // main.rs
@@ -87,37 +105,29 @@ use runa_engine::{runa_asset, runa_core};
 
 use runa_engine::runa_core::Vec3;
 use runa_engine::runa_core::{
-    components::{SpriteRenderer, Transform},
+    components::{Camera, SpriteRenderer, Transform, ActiveCamera},
     input_system::*,
     ocs::Script,
 };
 
 
 fn main() {
-    // Create a new empty world to hold game objects and systems
     let mut world = World::default();
-
-    // Spawn the player object (managed via its Script implementation)
     world.spawn(Box::new(Player::new()));
 
-    // Configure the application window
-	let config = RunaWindowConfig {
-		title: "Sandbox".to_string(),
-		width: 1280,
-		height: 720,
-		fullscreen: false,
-		vsync: true,
-		show_fps_in_title: true,
+    let config = RunaWindowConfig {
+        title: "My 2D Game".to_string(),
+        width: 1280,
+        height: 720,
+        fullscreen: false,
+        vsync: true,
+        show_fps_in_title: true,
         window_icon: None,
-	};
+    };
 
-	// Launch the engine with the configured world and window settings
-	let _ = RunaApp::run_with_config(world, config);
-	// or run with default window settings
-	let _ = RunaApp::run_default(world);
+    let _ = RunaApp::run_with_config(world, config);
 }
 
-/// Player script — defines behavior for the player-controlled character.
 pub struct Player {
     speed: f32,
     direction: Vec3,
@@ -125,61 +135,69 @@ pub struct Player {
 
 impl Player {
     pub fn new() -> Self {
-        Self {
-            speed: 0.25,
-            direction: Vec3::ZERO,
-        }
+        Self { speed: 0.25, direction: Vec3::ZERO }
     }
 }
 
 impl Script for Player {
-    /// Called once when the object is created.
-    /// Initializes components (transform + sprite).
-    fn construct(&self, _object: &mut runa_core::ocs::Object) {
-        _object
+    fn construct(&self, object: &mut runa_core::ocs::Object) {
+        // Add 2D orthographic camera (32x18 world units)
+        object.add_component(Camera::new_ortho(32.0, 18.0, (1280, 720)));
+        object.add_component(ActiveCamera);
+
+        object
             .add_component(Transform::default())
             .add_component(SpriteRenderer {
-                texture: Some(runa_asset::loader::load_image("assets/Charactert.png")),
+                texture: Some(runa_asset::load_image!("assets/Charactert.png")),
             });
     }
 
-    /// Called once on the first tick after the object is added to the world.
-    /// Sets initial position and scale.
-    fn start(&mut self, _object: &mut runa_core::ocs::Object) {
-        if let Some(transform) = _object.get_component_mut::<Transform>() {
+    fn start(&mut self, object: &mut runa_core::ocs::Object) {
+        if let Some(transform) = object.get_component_mut::<Transform>() {
             transform.position = Vec3::new(0.0, 0.0, 0.0);
             transform.scale = Vec3::new(1.0, 1.0, 1.0);
         }
     }
 
-    /// Called every tick. Handles input and updates position.
-    fn update(&mut self, _object: &mut runa_core::ocs::Object, _dt: f32) {
-        if let Some(transform) = _object.get_component_mut::<Transform>() {
-            // Reset movement direction
+    fn update(&mut self, object: &mut runa_core::ocs::Object, _dt: f32) {
+        if let Some(transform) = object.get_component_mut::<Transform>() {
             self.direction = Vec3::ZERO;
-
-            // Read input state (WASD keys)
-            if Input::is_key_pressed(KeyCode::KeyW) {
-                self.direction.y = 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyS) {
-                self.direction.y = -1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyD) {
-                self.direction.x = 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyA) {
-                self.direction.x = -1.0;
-            }
-
-            // Apply normalized movement (diagonal speed compensation)
+            if Input::is_key_pressed(KeyCode::KeyW) { self.direction.y = 1.0; }
+            if Input::is_key_pressed(KeyCode::KeyS) { self.direction.y = -1.0; }
+            if Input::is_key_pressed(KeyCode::KeyD) { self.direction.x = 1.0; }
+            if Input::is_key_pressed(KeyCode::KeyA) { self.direction.x = -1.0; }
             transform.position += self.direction.normalize_or_zero() * self.speed;
         }
     }
 }
-
-
 ```
+
+#### 3D Game Example
+
+For 3D games, use perspective camera:
+
+```rust
+// Add 3D perspective camera
+object.add_component(Camera::new_perspective(
+    Vec3::new(0.0, 0.0, 5.0), // position
+    Vec3::ZERO,                // target (look at)
+    Vec3::Y,                   // up
+    75.0_f32.to_radians(),    // FOV
+    0.1,                       // near
+    1000.0,                    // far
+    (1280, 720),               // viewport
+));
+object.add_component(ActiveCamera);
+
+// Add 3D mesh
+let mesh = Mesh::cube(2.0);
+object.add_component(MeshRenderer::new(mesh));
+```
+
+For complete guides, see:
+
+- [Creating a 2D Game](docs/tutorials/getting-started/creating-a-2d-game.md)
+- [Creating a 3D Game](docs/tutorials/getting-started/creating-a-3d-game.md)
 
 ## 📂 Project Structure
 
