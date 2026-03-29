@@ -36,7 +36,7 @@ struct RunaHub {
 
 impl Default for RunaHub {
     fn default() -> Self {
-        // Загружаем недавние проекты
+        // Load recent projects
         let recent_projects = load_recent_projects();
         Self {
             recent_projects,
@@ -123,27 +123,27 @@ impl RunaHub {
         let project_path = PathBuf::from(&self.new_project_path);
         let project_name = &self.new_project_name;
 
-        // Создаём папку проекта
+        // Create the project directory
         fs::create_dir_all(&project_path)?;
 
-        // Копируем шаблон
+        // Copy the template
         copy_template(TEMPLATES_DIR, &project_path, project_name)?;
 
-        // Добавляем в недавние
+        // Add to recents
         self.recent_projects.push(ProjectEntry {
             name: project_name.clone(),
             path: project_path.clone(),
         });
         save_recent_projects(&self.recent_projects)?;
 
-        // Открываем в редакторе
+        // Open in the editor
         self.open_project_in_editor(&project_path);
 
         Ok(())
     }
 
     fn open_project_in_editor(&self, project_path: &PathBuf) {
-        // Запускаем: cargo run -p runa_editor --manifest-path <project>/Cargo.toml
+        // Run: cargo run --bin runa_editor
         let status = Command::new("cargo")
             .args(&["run", "--bin", "runa_editor"])
             .current_dir(project_path)
@@ -241,7 +241,7 @@ impl RunaHub {
 
         ui.label("Editor Theme:");
         egui::ComboBox::from_label("Theme")
-            .selected_text("Dark") // пока фиксировано
+            .selected_text("Dark") // Fixed for now
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut (), (), "Light");
                 ui.selectable_value(&mut (), (), "Dark");
@@ -251,7 +251,7 @@ impl RunaHub {
         ui.text_edit_singleline(&mut self.new_project_path);
 
         if ui.button("Save Settings").clicked() {
-            // TODO: сохранить в ~/.runa_hub/settings.ron
+            // TODO: save to ~/.runa_hub/settings.ron
             ui.label("Saved!");
         }
     }
@@ -354,7 +354,7 @@ fn setup_style(ctx: &egui::Context) {
 
     style.interaction.selectable_labels = false;
 
-    // Тёмная тема в духе UE5 / Zed
+    // Dark theme inspired by UE5 / Zed
     style.visuals = Visuals::dark();
     style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(40, 40, 45);
     style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(60, 60, 70);
@@ -365,7 +365,7 @@ fn setup_style(ctx: &egui::Context) {
     style.visuals.hyperlink_color = Color32::from_rgb(100, 180, 255);
     style.visuals.selection.bg_fill = Color32::from_rgb(60, 100, 160);
 
-    // Опционально: настроить шрифт
+    // Optional: adjust font sizing
     style
         .text_styles
         .get_mut(&egui::TextStyle::Body)
@@ -387,7 +387,7 @@ fn nav_button(
     let desired_size = egui::vec2(ui.available_width(), button_height);
     let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-    // Фон: прозрачный по умолчанию, подсветка при наведении/активности
+    // Background: transparent by default, highlighted on hover/active
     let bg_fill = if is_active {
         egui::Color32::from_rgb(60, 60, 75)
     } else if response.hovered() {
@@ -398,14 +398,14 @@ fn nav_button(
 
     ui.painter().rect_filled(rect, 4.0, bg_fill);
 
-    // Цвет текста
+    // Text color
     let text_color = if is_active {
         egui::Color32::WHITE
     } else {
         egui::Color32::from_gray(200)
     };
 
-    // Создаём дочерний UI для размещения иконки и текста
+    // Create a child UI to place the icon and label
     let mut child_ui = ui.new_child(
         egui::UiBuilder::new()
             .ui_stack_info(egui::UiStackInfo::new(egui::UiKind::Window))
@@ -413,15 +413,15 @@ fn nav_button(
             .layout(Layout::left_to_right(Align::Center)),
     );
 
-    // Иконка
+    // Icon
     if let Some(tex) = icon {
         child_ui.add(egui::Image::new(tex).max_width(24.0));
     }
 
-    // Отступ между иконкой и текстом
+    // Spacing between the icon and the text
     child_ui.add_space(8.0);
 
-    // Текст
+    // Label
     child_ui.label(RichText::new(label).color(text_color));
 
     response

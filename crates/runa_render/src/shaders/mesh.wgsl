@@ -1,9 +1,9 @@
 // ===== UNIFORMS =====
 struct MeshUniforms {
-    view_proj: mat4x4<f32>,  // 64 байта
-    view: mat4x4<f32>,       // 64 байта
-    color: vec4<f32>,        // 16 байт - цвет меша
-    _padding: array<vec4<f32>, 7>, // 112 байт для выравнивания до 256
+  view_proj: mat4x4<f32>,  // 64 bytes
+  view: mat4x4<f32>,       // 64 bytes
+  color: vec4<f32>,        // 16 bytes - mesh color
+  _padding: array<vec4<f32>, 7>, // 112 bytes of padding to align to 256
 };
 @group(0) @binding(0) var<uniform> globals: MeshUniforms;
 
@@ -27,13 +27,13 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
-    // Мировая позиция вершины
+    // World-space vertex position
     let world_pos = in.position;
 
-    // Мировая нормаль
+    // World-space normal
     let world_normal = normalize(in.normal);
 
-    // Финальная позиция в клип-пространстве
+    // Final clip-space position
     var out: VertexOutput;
     out.position = globals.view_proj * vec4<f32>(world_pos, 1.0);
     out.uv = in.uv;
@@ -43,18 +43,18 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
-// ===== ФРАГМЕНТНЫЙ ШЕЙДЕР =====
+// ===== Fragment Shader =====
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Простое диффузное освещение (направленный свет)
+    // Simple diffuse lighting (directional light)
     let light_dir = normalize(vec3<f32>(1.0, -1.0, 1.0));
     let normal = normalize(in.normal);
     let diffuse = max(dot(normal, light_dir), 0.0) * 0.8 + 0.2; // ambient + diffuse
 
-    // Используем цвет из uniform
+    // Use the color from the uniform
     let base_color = globals.color;
 
-    // Применяем освещение
+    // Apply lighting
     let final_color = base_color * diffuse;
 
     return final_color;

@@ -19,9 +19,9 @@ impl Mesh {
     pub fn cube(size: f32) -> Self {
         let h = size * 0.5;
 
-        // Вершины куба (6 граней × 4 вершины = 24 вершины)
+        // Cube vertices (6 faces x 4 vertices = 24 vertices)
         let vertices = vec![
-            // Передняя грань (z = h)
+            // Front face (z = h)
             Vertex3D {
                 position: [-h, -h, h],
                 normal: [0.0, 0.0, 1.0],
@@ -42,7 +42,7 @@ impl Mesh {
                 normal: [0.0, 0.0, 1.0],
                 uv: [0.0, 1.0],
             },
-            // Задняя грань (z = -h)
+            // Back face (z = -h)
             Vertex3D {
                 position: [-h, -h, -h],
                 normal: [0.0, 0.0, -1.0],
@@ -63,7 +63,7 @@ impl Mesh {
                 normal: [0.0, 0.0, -1.0],
                 uv: [0.0, 1.0],
             },
-            // Верхняя грань (y = h)
+            // Top face (y = h)
             Vertex3D {
                 position: [-h, h, -h],
                 normal: [0.0, 1.0, 0.0],
@@ -84,7 +84,7 @@ impl Mesh {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
             },
-            // Нижняя грань (y = -h)
+            // Bottom face (y = -h)
             Vertex3D {
                 position: [-h, -h, -h],
                 normal: [0.0, -1.0, 0.0],
@@ -105,7 +105,7 @@ impl Mesh {
                 normal: [0.0, -1.0, 0.0],
                 uv: [0.0, 1.0],
             },
-            // Правая грань (x = h)
+            // Right face (x = h)
             Vertex3D {
                 position: [h, -h, -h],
                 normal: [1.0, 0.0, 0.0],
@@ -126,7 +126,7 @@ impl Mesh {
                 normal: [1.0, 0.0, 0.0],
                 uv: [0.0, 1.0],
             },
-            // Левая грань (x = -h)
+            // Left face (x = -h)
             Vertex3D {
                 position: [-h, -h, -h],
                 normal: [-1.0, 0.0, 0.0],
@@ -149,14 +149,14 @@ impl Mesh {
             },
         ];
 
-        // Индексы для 12 треугольников (2 на грань × 6 граней)
+        // Indices for 12 triangles (2 per face x 6 faces)
         let indices = vec![
-            // Передняя
-            0, 1, 2, 2, 3, 0, // Задняя
-            4, 5, 6, 6, 7, 4, // Верхняя
-            8, 9, 10, 10, 11, 8, // Нижняя
-            12, 13, 14, 14, 15, 12, // Правая
-            16, 17, 18, 18, 19, 16, // Левая
+            // Front
+            0, 1, 2, 2, 3, 0, // Back
+            4, 5, 6, 6, 7, 4, // Top
+            8, 9, 10, 10, 11, 8, // Bottom
+            12, 13, 14, 14, 15, 12, // Right
+            16, 17, 18, 18, 19, 16, // Left
             20, 21, 22, 22, 23, 20,
         ];
 

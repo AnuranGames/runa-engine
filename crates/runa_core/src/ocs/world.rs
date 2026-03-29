@@ -205,7 +205,7 @@ impl World {
                 object.get_component::<Transform>(),
                 object.get_component::<SpriteRenderer>(),
             ) {
-                // Интерполируем позицию
+                // Interpolate position
                 let interpolated_position = Vec3::lerp(
                     transform.previous_position,
                     transform.position,
@@ -241,7 +241,7 @@ impl World {
                                     continue;
                                 }
 
-                                // Мировая позиция тайла относительно объекта
+                                // Tile world position relative to the object
                                 let world_pos = tilemap.tile_to_world(x, y);
                                 let final_pos = transform.position + world_pos;
 
@@ -266,7 +266,7 @@ impl World {
             }
         }
 
-        // Отладочная отрисовка
+        // Debug rendering
         self.debug_renderer.render_debug(self, render_queue);
     }
 

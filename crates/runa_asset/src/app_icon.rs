@@ -1,14 +1,14 @@
 use std::path::Path;
 use winit::window::Icon;
 
-/// Загружает иконку окна из файла изображения
+/// Loads a window icon from an image file.
 ///
-/// # Требования
-/// - Формат: PNG (рекомендуется)
-/// - Размер: кратен 16 (16x16, 32x32, 64x64, 128x128, 256x256)
-/// - Каналы: RGBA (с альфа-каналом)
+/// # Requirements
+/// - Format: PNG (recommended)
+/// - Size: multiple of 16 (16x16, 32x32, 64x64, 128x128, 256x256)
+/// - Channels: RGBA (with alpha)
 ///
-/// # Пример
+/// # Example
 /// ```rust
 /// let icon = load_window_icon("assets/icon.png")?;
 /// window.set_window_icon(Some(icon));
@@ -16,20 +16,20 @@ use winit::window::Icon;
 pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
     let path = path.as_ref();
 
-    // Загружаем изображение через image crate
+    // Load the image through the image crate
     let img = image::open(path)
         .map_err(|e| format!("Failed to load icon '{}': {}", path.display(), e))?;
 
-    // Конвертируем в RGBA8
+    // Convert to RGBA8
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
 
-    // Проверяем размер (winit требует квадратные иконки)
+    // Validate the size (winit expects square icons)
     if width != height {
         return Err(format!("Icon must be square, got {}x{}", width, height));
     }
 
-    // Проверяем поддерживаемые размеры
+    // Validate commonly supported icon sizes
     const VALID_SIZES: &[u32] = &[16, 32, 48, 64, 128, 256, 512];
     if !VALID_SIZES.contains(&width) {
         return Err(format!(
@@ -38,14 +38,14 @@ pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
         ));
     }
 
-    // Создаём Icon для winit
+    // Create the Icon for winit
     Icon::from_rgba(rgba.to_vec(), width, height)
         .map_err(|e| format!("Failed to create icon: {}", e))
 }
 
-/// Загружает несколько иконок разных размеров (рекомендуется для кроссплатформенности)
+/// Loads multiple icon sizes (recommended for cross-platform support).
 ///
-/// # Пример
+/// # Example
 /// ```rust
 /// let icons = load_window_icons(&[
 ///     "assets/icon_16.png",
@@ -53,7 +53,7 @@ pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
 ///     "assets/icon_64.png",
 ///     "assets/icon_256.png",
 /// ])?;
-/// window.set_window_icon(icons.first().cloned()); // winit использует первую подходящую
+/// window.set_window_icon(icons.first().cloned()); // winit uses the first compatible icon
 /// ```
 
 #[allow(dead_code)]

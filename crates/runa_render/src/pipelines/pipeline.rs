@@ -24,13 +24,13 @@ impl SpritePipeline {
         });
 
         let vertex_buffers = [
-            // Базовый квад (шаг: вершина)
+            // Base quad (per-vertex step)
             wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
             },
-            // Инстансы (шаг: инстанс)
+            // Instances (per-instance step)
             wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<InstanceData>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
@@ -101,7 +101,7 @@ impl SpritePipeline {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: format,
-                    // ← КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
+                    // Key change:
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

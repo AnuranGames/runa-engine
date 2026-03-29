@@ -258,7 +258,7 @@ impl<'window> ApplicationHandler for App<'window> {
 
         self.accumulator += frame_time;
 
-        // Fixed timestep обновление
+        // Fixed timestep update
         while self.accumulator >= FIXED_TIMESTEP {
             {
                 let mut input_state = InputState::current_mut();
@@ -290,7 +290,7 @@ impl<'window> ApplicationHandler for App<'window> {
             self.accumulator -= FIXED_TIMESTEP;
         }
 
-        // Запрашиваем перерисовку
+        // Request a redraw
         if let Some(window) = &self.window {
             window.request_redraw();
         }

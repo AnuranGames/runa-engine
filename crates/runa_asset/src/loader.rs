@@ -1,4 +1,4 @@
-//! Runa Asset Loading — images, audio, and more
+//! Runa asset loading for images, audio, and more.
 use std::path::PathBuf;
 
 use crate::handle::Handle;
@@ -9,10 +9,10 @@ pub use crate::audio::{AudioAsset, AudioLoadError};
 #[macro_export]
 macro_rules! load_image {
     ($path:literal) => {{
-        // Compile-time проверка
+        // Compile-time validation
         const _: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/", $path));
 
-        // Runtime загрузка
+        // Runtime loading
         $crate::loader::load_image(env!("CARGO_MANIFEST_DIR"), $path)
     }};
 }

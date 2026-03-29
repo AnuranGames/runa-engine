@@ -35,9 +35,9 @@ impl DebugRenderer {
                 object.get_component::<Transform>(),
                 object.get_component::<PhysicsCollision>(),
             ) {
-                // В текущей реализации RenderQueue нет draw_line,
-                // поэтому отображаем коллизию как маленький спрайт в центре
-                // или добавим возможность отрисовки в будущем
+                // The current RenderQueue has no draw_line support.
+                // Collision visualization can later be represented with
+                // a small center sprite or a dedicated debug primitive pass.
             }
         }
     }

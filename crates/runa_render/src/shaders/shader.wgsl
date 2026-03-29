@@ -1,5 +1,5 @@
 struct VertexInput {
-    @location(0) position: vec3<f32>,   // локальная позиция вершины квада (-0.5..0.5)
+  @location(0) position: vec3<f32>,   // local quad vertex position (-0.5..0.5)
     @location(1) tex_coords: vec2<f32>,
 };
 
@@ -9,13 +9,13 @@ struct VertexOutput {
 };
 
 struct InstanceData {
-    @location(2) position: vec3<f32>,   // мировая позиция спрайта
-    @location(3) rotation: f32,         // поворот вокруг оси Z (радианы)
-    @location(4) scale: vec3<f32>,      // масштаб по осям X, Y, Z
+  @location(2) position: vec3<f32>,   // sprite world position
+  @location(3) rotation: f32,         // Z-axis rotation in radians
+  @location(4) scale: vec3<f32>,      // scale along X, Y, Z
     @location(5) uv_offset: vec2<f32>,
     @location(6) uv_size: vec2<f32>,
     @location(7) flip: u32,
-    @location(8) _pad: f32,             // паддинг до 32 байт
+  @location(8) _pad: f32,             // padding up to 32 bytes
 };
 
 struct Globals {
@@ -35,42 +35,42 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    // === 1. Применяем 2D-поворот вокруг оси Z ===
+    // === 1. Apply 2D rotation around the Z axis ===
     let cos_a = cos(instance.rotation);
     let sin_a = sin(instance.rotation);
 
     let rotated_x = vertex.position.x * cos_a - vertex.position.y * sin_a;
     let rotated_y = vertex.position.x * sin_a + vertex.position.y * cos_a;
 
-    // === 2. Применяем масштаб ===
+    // === 2. Apply scale ===
     let scaled_x = rotated_x * instance.scale.x;
     let scaled_y = rotated_y * instance.scale.y;
-    let scaled_z = vertex.position.z * instance.scale.z; // обычно 0.0 для спрайтов
+    let scaled_z = vertex.position.z * instance.scale.z; // Usually 0.0 for sprites
 
-    // === 3. Добавляем мировую позицию инстанса ===
+    // === 3. Add the instance world position ===
     let world_x = scaled_x + instance.position.x;
     let world_y = scaled_y + instance.position.y;
     let world_z = scaled_z + instance.position.z;
 
-    // === 4. Коррекция аспекта для пиксель-перфект рендеринга ===
+    // === 4. Aspect correction for pixel-perfect rendering ===
     let corrected_x = world_x * globals.aspect;
 
-    // === 5. Преобразуем в клип-пространство ===
+    // === 5. Convert to clip space ===
     out.clip_position = globals.view_proj * vec4<f32>(corrected_x, world_y, world_z, 1.0);
 
-    // Базовые UV от вершины (0..1)
+    // Base UVs from the vertex (0..1)
     var uv = vertex.tex_coords;
 
-    // Флип
+    // Flipping
     if (instance.flip & 1u) != 0u { uv.x = 1.0 - uv.x; }
     if (instance.flip & 2u) != 0u { uv.y = 1.0 - uv.y; }
 
-    // ✅ КЛЮЧЕВАЯ СТРОКА: применяем UV-rect
+    // Key line: apply the UV rect
     let final_uv = instance.uv_offset + uv * instance.uv_size;
 
-    out.tex_coords = final_uv;  // ← Передаём в фрагментный шейдер
+    out.tex_coords = final_uv;  // Pass to the fragment shader
 
-    // ... остальная логика позиции ...
+    // ... remaining position logic ...
     return out;
 }
 
