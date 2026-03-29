@@ -44,6 +44,26 @@ pub struct Globals {
     pub _padding: [f32; 7],
 }
 
+/// Offscreen render target used by the editor viewport and previews.
+pub struct RenderTarget {
+    _color_texture: Texture,
+    color_view: TextureView,
+    _depth_texture: Texture,
+    depth_view: TextureView,
+    size: (u32, u32),
+    _format: wgpu::TextureFormat,
+}
+
+impl RenderTarget {
+    pub fn size(&self) -> (u32, u32) {
+        self.size
+    }
+
+    pub fn color_view(&self) -> &TextureView {
+        &self.color_view
+    }
+}
+
 /// Main renderer struct managing GPU resources and rendering.
 pub struct Renderer<'window> {
     pub surface: wgpu::Surface<'window>,
@@ -113,11 +133,26 @@ impl<'window> Renderer<'window> {
 
         let size = window.inner_size();
 
+        let capabilities = surface.get_capabilities(&adapter);
+        let preferred_format = capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(|format| *format == wgpu::TextureFormat::Rgba8Unorm)
+            .or_else(|| {
+                capabilities
+                    .formats
+                    .iter()
+                    .copied()
+                    .find(|format| *format == wgpu::TextureFormat::Bgra8Unorm)
+            })
+            .unwrap_or(capabilities.formats[0]);
+
         let surface_config: wgpu::SurfaceConfiguration;
         if vsync {
             surface_config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface.get_capabilities(&adapter).formats[0],
+                format: preferred_format,
                 width: size.width.max(1),
                 height: size.height.max(1),
                 present_mode: wgpu::PresentMode::AutoVsync,
@@ -128,7 +163,7 @@ impl<'window> Renderer<'window> {
         } else {
             surface_config = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface.get_capabilities(&adapter).formats[0],
+                format: preferred_format,
                 width: size.width.max(1),
                 height: size.height.max(1),
                 present_mode: wgpu::PresentMode::AutoNoVsync,
@@ -287,31 +322,38 @@ impl<'window> Renderer<'window> {
         pollster::block_on(Self::new_async(window, vsync))
     }
 
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.surface_config.format
+    }
+
+    pub fn surface_size(&self) -> (u32, u32) {
+        (self.surface_config.width, self.surface_config.height)
+    }
+
+    pub fn create_render_target(&self, size: (u32, u32)) -> RenderTarget {
+        Self::build_render_target(&self.device, size, self.surface_config.format)
+    }
+
     /// Resizes the surface and recreates the depth texture.
     pub fn resize(&mut self, new_size: (u32, u32)) {
         let (width, height) = new_size;
         self.surface_config.width = width.max(1);
         self.surface_config.height = height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
-
-        // Recreate depth texture
-        self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: self.surface_config.width,
-                height: self.surface_config.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            label: Some("Depth Texture"),
-            view_formats: &[],
-        });
-        self.depth_view = self
-            .depth_texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let depth = Self::create_depth_texture(
+            &self.device,
+            (self.surface_config.width, self.surface_config.height),
+        );
+        self.depth_texture = depth.0;
+        self.depth_view = depth.1;
 
         // Update UI uniforms
         let ui_uniforms = UIUniforms {
@@ -337,19 +379,78 @@ impl<'window> Renderer<'window> {
                 ..Default::default()
             });
 
-        // Update global uniform data
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        let depth_view = self.depth_view.clone();
+        self.encode_render_passes(
+            &mut encoder,
+            &view,
+            &depth_view,
+            (self.surface_config.width, self.surface_config.height),
+            queue,
+            camera_matrix,
+            virtual_size,
+        );
+        self.queue.submit(Some(encoder.finish()));
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        surface_texture.present();
+    }
+
+    pub fn draw_to_target(
+        &mut self,
+        target: &RenderTarget,
+        queue: &RenderQueue,
+        camera_matrix: glam::Mat4,
+        virtual_size: Vec2,
+    ) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Offscreen Render Encoder"),
+            });
+        self.encode_render_passes(
+            &mut encoder,
+            target.color_view(),
+            &target.depth_view,
+            target.size(),
+            queue,
+            camera_matrix,
+            virtual_size,
+        );
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    fn encode_render_passes(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &TextureView,
+        depth_view: &TextureView,
+        target_size: (u32, u32),
+        queue: &RenderQueue,
+        camera_matrix: glam::Mat4,
+        virtual_size: Vec2,
+    ) {
+        let target_aspect = target_size.0.max(1) as f32 / target_size.1.max(1) as f32;
         self.queue.write_buffer(
             &self.globals_buffer,
             0,
             bytemuck::bytes_of(&Globals {
                 view_proj: camera_matrix.to_cols_array_2d(),
-                aspect: (virtual_size.x / virtual_size.y)
-                    / (self.surface_config.width as f32 / self.surface_config.height as f32),
+                aspect: (virtual_size.x / virtual_size.y) / target_aspect,
                 _padding: [0.0; 7],
             }),
         );
 
-        // Collect sprite instances and UI vertices
+        let ui_uniforms = UIUniforms {
+            screen_width: target_size.0.max(1) as f32,
+            screen_height: target_size.1.max(1) as f32,
+        };
+        self.queue
+            .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::bytes_of(&ui_uniforms));
+
         let mut all_instances = Vec::new();
         let mut batches = Vec::new();
         let mut ui_vertices = Vec::new();
@@ -357,9 +458,7 @@ impl<'window> Renderer<'window> {
 
         for cmd in &queue.commands {
             match cmd {
-                RenderCommands::Mesh3D { .. } => {
-                    // Already rendered in the first pass
-                }
+                RenderCommands::Mesh3D { .. } => {}
                 RenderCommands::Sprite {
                     texture,
                     position,
@@ -423,19 +522,11 @@ impl<'window> Renderer<'window> {
                     size,
                     color,
                 } => {
-                    // Generate quad vertices for debug rectangle
-                    // position is center, convert to top-left
                     let left = position.x - size.x / 2.0;
                     let top = position.y - size.y / 2.0;
                     let right = left + size.x;
                     let bottom = top + size.y;
 
-                    eprintln!(
-                        "UI DebugRect: screen pos=({},{}) size=({},{}) -> vertices: ({},{}) to ({},{})",
-                        position.x, position.y, size.x, size.y, left, top, right, bottom
-                    );
-
-                    // Two triangles for the rectangle
                     ui_vertices.extend_from_slice(&[
                         UIVertex {
                             position: [left, top],
@@ -469,7 +560,6 @@ impl<'window> Renderer<'window> {
                     color,
                     size,
                 } => {
-                    // Render text using textured quads with font atlas
                     let (char_width, char_height) = self.font_manager.char_size();
                     let char_w = *size * char_width as f32;
                     let char_h = *size * char_height as f32;
@@ -482,15 +572,12 @@ impl<'window> Renderer<'window> {
                             continue;
                         }
 
-                        // Get UV coordinates for this character from atlas
                         if let Some(char_uv) = self.font_manager.get_char_uv(ch) {
-                            // Generate textured quad for character
                             let left = x;
                             let top = y;
                             let right = x + char_w;
                             let bottom = y + char_h;
 
-                            // Two triangles with UV coordinates from atlas
                             ui_text_vertices.extend_from_slice(&[
                                 UITexturedVertex {
                                     position: [left, top],
@@ -534,7 +621,6 @@ impl<'window> Renderer<'window> {
             }
         }
 
-        // Resize instance buffer if needed
         if all_instances.len() > self.instance_buffer_capacity {
             let new_capacity = (all_instances.len() * 3 / 2).max(1000);
             self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -546,7 +632,6 @@ impl<'window> Renderer<'window> {
             self.instance_buffer_capacity = new_capacity;
         }
 
-        // Write all instances to GPU buffer
         if !all_instances.is_empty() {
             self.queue.write_buffer(
                 &self.instance_buffer,
@@ -555,18 +640,10 @@ impl<'window> Renderer<'window> {
             );
         }
 
-        // ===== RENDER PASS =====
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        // Always use depth attachment for sprite pipeline compatibility
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: target_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -575,7 +652,7 @@ impl<'window> Renderer<'window> {
                 depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
+                view: depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -585,8 +662,6 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        // First: Render 3D meshes
-        // camera_matrix = projection * view, so we need: camera_matrix * model_matrix
         for cmd in &queue.commands {
             if let RenderCommands::Mesh3D {
                 vertices,
@@ -595,7 +670,6 @@ impl<'window> Renderer<'window> {
                 color,
             } = cmd
             {
-                // Update mesh uniforms with MVP matrix
                 let mvp_matrix = camera_matrix * model_matrix;
                 let mesh_uniforms = MeshUniforms {
                     view_proj: mvp_matrix.to_cols_array_2d(),
@@ -609,7 +683,6 @@ impl<'window> Renderer<'window> {
                     bytemuck::bytes_of(&mesh_uniforms),
                 );
 
-                // Create bind group for mesh
                 let mesh_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.mesh_pipeline.bind_group_layout,
                     entries: &[wgpu::BindGroupEntry {
@@ -619,7 +692,6 @@ impl<'window> Renderer<'window> {
                     label: Some("Mesh Bind Group"),
                 });
 
-                // Create vertex and index buffers
                 let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("Mesh Vertex Buffer"),
                     size: (vertices.len() * std::mem::size_of::<runa_render_api::Vertex3D>())
@@ -639,20 +711,15 @@ impl<'window> Renderer<'window> {
                 self.queue
                     .write_buffer(&index_buffer, 0, bytemuck::cast_slice(indices));
 
-                // Set pipeline and buffers
                 rpass.set_pipeline(&self.mesh_pipeline.pipeline);
                 rpass.set_bind_group(0, &mesh_bind_group, &[]);
                 rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-                // Draw indexed
                 rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
             }
         }
 
-        // Render sprite batches
         for (texture_key, instance_offset, instance_count) in batches {
-            // Get GPU texture from textures cache
             if !self.textures.contains_key(&texture_key) {
                 let texture = self.textures_cache.get(&texture_key).unwrap();
                 let gpu_tex = Arc::new(GpuTexture::from_asset(&self.device, &self.queue, texture));
@@ -691,11 +758,7 @@ impl<'window> Renderer<'window> {
             );
         }
 
-        // Render UI (debug rects) in the same render pass
         if !ui_vertices.is_empty() {
-            eprintln!("UI: rendering {} vertices", ui_vertices.len());
-
-            // Create vertex buffer for UI
             let ui_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("UI Vertex Buffer"),
                 size: (std::mem::size_of::<UIVertex>() * ui_vertices.len()) as u64,
@@ -711,11 +774,7 @@ impl<'window> Renderer<'window> {
             rpass.draw(0..ui_vertices.len() as u32, 0..1);
         }
 
-        // Render textured UI (text) in the same render pass
         if !ui_text_vertices.is_empty() {
-            eprintln!("UI Text: rendering {} vertices", ui_text_vertices.len());
-
-            // Create vertex buffer for textured UI
             let ui_text_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("UI Text Vertex Buffer"),
                 size: (std::mem::size_of::<UITexturedVertex>() * ui_text_vertices.len()) as u64,
@@ -728,7 +787,6 @@ impl<'window> Renderer<'window> {
                 bytemuck::cast_slice(&ui_text_vertices),
             );
 
-            // Create bind group for text using font atlas
             if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
                 let text_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.ui_pipeline.textured_bind_group_layout,
@@ -753,15 +811,59 @@ impl<'window> Renderer<'window> {
                 rpass.set_bind_group(0, &text_bind_group, &[]);
                 rpass.set_vertex_buffer(0, ui_text_vertex_buffer.slice(..));
                 rpass.draw(0..ui_text_vertices.len() as u32, 0..1);
-                eprintln!("UI Text: draw call submitted with atlas texture");
-            } else {
-                eprintln!("UI Text: ERROR - no font atlas texture available!");
             }
         }
+    }
 
-        drop(rpass);
-        self.queue.submit(Some(encoder.finish()));
-        let _ = self.device.poll(wgpu::PollType::Poll);
-        surface_texture.present();
+    fn build_render_target(
+        device: &wgpu::Device,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+    ) -> RenderTarget {
+        let (width, height) = (size.0.max(1), size.1.max(1));
+        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Offscreen Color Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (depth_texture, depth_view) = Self::create_depth_texture(device, (width, height));
+
+        RenderTarget {
+            _color_texture: color_texture,
+            color_view,
+            _depth_texture: depth_texture,
+            depth_view,
+            size: (width, height),
+            _format: format,
+        }
+    }
+
+    fn create_depth_texture(device: &wgpu::Device, size: (u32, u32)) -> (Texture, TextureView) {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: size.0.max(1),
+                height: size.1.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            label: Some("Depth Texture"),
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
     }
 }

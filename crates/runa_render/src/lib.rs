@@ -3,4 +3,4 @@ pub mod pipelines;
 pub mod renderer;
 pub mod resources;
 
-pub use renderer::Renderer;
+pub use renderer::{RenderTarget, Renderer};
