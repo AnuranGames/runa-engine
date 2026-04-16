@@ -27,7 +27,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.2" }
+runa_engine = { git = "https://github.com/Runa-Engine/runa.git", tag = "v0.2.0-alpha.2" }
 glam = "0.32"
 ```
 

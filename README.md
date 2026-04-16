@@ -105,7 +105,7 @@ cargo run -p sandbox
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "v0.2.0-alpha.2" }
+runa_engine = { git = "https://github.com/Runa-Engine/runa.git", tag = "v0.2.0-alpha.2" }
 ```
 
 ## Minimal 2D Example

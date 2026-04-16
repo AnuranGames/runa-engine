@@ -8,7 +8,7 @@ In your `Cargo.toml`, add the Runa Engine crates:
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/AnuranGames/runa-engine.git", tag = "<current version>" }
+runa_engine = { git = "https://github.com/Runa-Engine/runa.git", tag = "<current version>" }
 ```
 For current version look in [REAME](README.md) 
 ## Step 2: Create the Main Function

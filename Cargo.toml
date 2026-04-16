@@ -21,7 +21,7 @@ version = "0.2.0-alpha.2"
 authors = ["Nik Neza <star.off.nik@gmail.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/AnuranGames/runa-engine"
+repository = "https://github.com/Runa-Engine/runa"
 description = "2D/3D game engine in Rust"
 
 [workspace.dependencies]
