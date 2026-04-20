@@ -34,3 +34,34 @@ pub use tilemap::TilemapRenderer;
 pub use transform::Transform;
 
 pub use ui::Canvas;
+
+macro_rules! impl_component {
+    ($($ty:ty),+ $(,)?) => {
+        $(impl Component for $ty {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+        })+
+    };
+}
+
+impl_component!(
+    ActiveCamera,
+    AudioListener,
+    AudioSource,
+    Camera,
+    Collider2D,
+    CursorInteractable,
+    MeshRenderer,
+    ObjectDefinitionInstance,
+    PhysicsCollision,
+    SpriteRenderer,
+    Tilemap,
+    TilemapRenderer,
+    Transform,
+    Canvas,
+);

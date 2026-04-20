@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::command::WorldCommand;
 use glam::{Vec2, Vec3};
 use runa_render_api::RenderQueue;
 
@@ -10,14 +11,19 @@ use crate::{
         SpriteRenderer, Tilemap, Transform,
     },
     debug_renderer::DebugRenderer,
-    ocs::{Object, Script},
+    registry::{ArchetypeKey, RunaArchetype, RuntimeRegistry},
+    ocs::{Object, ObjectId, Script},
 };
 
-#[derive(Default)]
 pub struct World {
-    pub objects: Vec<Object>,
+    objects: Vec<Object>,
     debug_renderer: DebugRenderer,
     pub audio_engine: AudioEngine,
+    next_object_id: u64,
+    command_queue: Vec<WorldCommand>,
+    processing_lifecycle: bool,
+    started: bool,
+    runtime_registry: Option<Arc<RuntimeRegistry>>,
 }
 
 impl World {
@@ -26,26 +32,63 @@ impl World {
         self.audio_engine.play(audio_source)
     }
 
-    pub fn default() -> Self {
+    pub fn new() -> Self {
         Self {
             objects: Vec::new(),
             debug_renderer: DebugRenderer::new(),
             audio_engine: AudioEngine::default(),
+            next_object_id: 1,
+            command_queue: Vec::new(),
+            processing_lifecycle: false,
+            started: false,
+            runtime_registry: None,
         }
     }
 
-    pub fn spawn(&mut self, script: Box<dyn Script>) -> &Object {
-        let mut object = Object::new();
-        object.set_script(script);
+    pub fn spawn(&mut self, object: Object) -> ObjectId {
+        self.insert_object(object)
+    }
+
+    pub fn spawn_script<S: Script>(&mut self, script: S) -> ObjectId {
+        self.insert_object(Object::empty().with(script))
+    }
+
+    pub fn set_runtime_registry(&mut self, runtime_registry: Arc<RuntimeRegistry>) {
+        self.runtime_registry = Some(runtime_registry);
+    }
+
+    pub fn runtime_registry(&self) -> Option<&RuntimeRegistry> {
+        self.runtime_registry.as_deref()
+    }
+
+    pub fn spawn_archetype<T: RunaArchetype>(&mut self) -> ObjectId {
+        T::create(self)
+    }
+
+    pub fn spawn_archetype_by_key(&mut self, key: &ArchetypeKey) -> Option<ObjectId> {
+        let registry = self.runtime_registry.clone()?;
+        registry.spawn_archetype_by_key(self, key)
+    }
+
+    pub fn spawn_archetype_by_name(&mut self, name: &str) -> Option<ObjectId> {
+        let registry = self.runtime_registry.clone()?;
+        registry.spawn_archetype_by_name(self, name)
+    }
+
+    fn insert_object(&mut self, mut object: Object) -> ObjectId {
+        let id = self.next_object_id;
+        self.next_object_id += 1;
+        object.set_id(id);
 
         self.objects.push(object);
 
-        // Set world pointer using raw pointer (safe because world outlives objects)
         let world_ptr = self as *mut World;
         let object = self.objects.last_mut().unwrap();
         object.set_world(unsafe { &mut *world_ptr });
-
-        object
+        if self.started && !self.processing_lifecycle {
+            Self::start_object_lifecycle(object);
+        }
+        id
     }
 
     pub fn construct(&mut self) {
@@ -53,36 +96,22 @@ impl World {
             .initialize()
             .expect("Failed to initialize audio engine");
 
-        // Set world pointers for all objects using raw pointer (safe because world outlives objects)
         let world_ptr = self as *mut World;
         for object in &mut self.objects {
             object.set_world(unsafe { &mut *world_ptr });
-
-            if let Some(script) = object.script.take() {
-                script.construct(object);
-                object.script = Some(script);
-            }
         }
     }
 
     pub fn start(&mut self) {
-        // Set world pointers for all objects using raw pointer (safe because world outlives objects)
+        self.processing_lifecycle = true;
         let world_ptr = self as *mut World;
         for object in &mut self.objects {
             object.set_world(unsafe { &mut *world_ptr });
-
-            if let Some(mut script) = object.script.take() {
-                script.start(object);
-                object.script = Some(script);
-            }
-
-            // Handle play_on_awake for AudioSource components
-            if let Some(audio) = object.get_component_mut::<AudioSource>() {
-                if audio.play_on_awake && audio.audio_asset.is_some() {
-                    audio.play_requested = true;
-                }
-            }
+            Self::start_object_lifecycle(object);
         }
+        self.processing_lifecycle = false;
+        self.started = true;
+        self.apply_commands();
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -93,13 +122,12 @@ impl World {
         }
 
         // Update scripts
-        let object_count = self.objects.len();
-        for i in 0..object_count {
-            if let Some(mut script) = self.objects[i].script.take() {
-                script.update(&mut self.objects[i], dt);
-                self.objects[i].script = Some(script);
-            }
+        self.processing_lifecycle = true;
+        for object in &mut self.objects {
+            object.run_update(dt);
         }
+        self.processing_lifecycle = false;
+        self.apply_commands();
 
         // Find active AudioListener and update listener position
         let mut listener_found = false;
@@ -317,8 +345,71 @@ impl World {
         self.debug_renderer.is_debug_draw_collisions_enabled()
     }
 
-    pub fn objects_mut(&mut self) -> &mut Vec<Object> {
-        &mut self.objects
+    /// Remove an object from the world.
+    ///
+    /// If a lifecycle pass is active, removal is deferred until `apply_commands()`.
+    pub fn despawn(&mut self, id: ObjectId) -> bool {
+        if self.processing_lifecycle {
+            self.queue_command(WorldCommand::Despawn(id));
+            return true;
+        }
+
+        self.despawn_immediate(id).is_some()
+    }
+
+    pub fn get(&self, id: ObjectId) -> Option<&Object> {
+        self.objects.iter().find(|object| object.id() == Some(id))
+    }
+
+    pub fn get_mut(&mut self, id: ObjectId) -> Option<&mut Object> {
+        self.objects
+            .iter_mut()
+            .find(|object| object.id() == Some(id))
+    }
+
+    pub fn find_first_with<T: 'static>(&self) -> Option<ObjectId> {
+        self.objects
+            .iter()
+            .find(|object| object.get_component::<T>().is_some())
+            .and_then(|object| object.id())
+    }
+
+    /// Return all matching object ids.
+    ///
+    /// Order is intentionally not part of the public contract.
+    pub fn find_all_with<T: 'static>(&self) -> Vec<ObjectId> {
+        self.objects
+            .iter()
+            .filter(|object| object.get_component::<T>().is_some())
+            .filter_map(|object| object.id())
+            .collect()
+    }
+
+    /// Query object ids by component type.
+    ///
+    /// Order is intentionally not part of the public contract.
+    pub fn query<T: 'static>(&self) -> Vec<ObjectId> {
+        self.find_all_with::<T>()
+    }
+
+    pub(crate) fn queue_command(&mut self, command: WorldCommand) {
+        self.command_queue.push(command);
+    }
+
+    pub fn apply_commands(&mut self) {
+        while !self.command_queue.is_empty() {
+            let commands = std::mem::take(&mut self.command_queue);
+            for command in commands {
+                match command {
+                    WorldCommand::Despawn(object_id) => {
+                        self.despawn_immediate(object_id);
+                    }
+                    WorldCommand::Spawn(object) => {
+                        self.insert_object(object);
+                    }
+                }
+            }
+        }
     }
 
     pub fn overlaps_collider_2d(
@@ -345,5 +436,56 @@ impl World {
                 other_transform.position.truncate(),
             )
         })
+    }
+
+    fn despawn_immediate(&mut self, id: ObjectId) -> Option<Object> {
+        let index = self.objects.iter().position(|object| object.id() == Some(id))?;
+        Some(self.objects.remove(index))
+    }
+
+    fn start_object_lifecycle(object: &mut Object) {
+        object.run_start();
+
+        if let Some(audio) = object.get_component_mut::<AudioSource>() {
+            if audio.play_on_awake && audio.audio_asset.is_some() {
+                audio.play_requested = true;
+            }
+        }
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::World;
+    use crate::{
+        components::Transform,
+        ocs::{Object, Script, ScriptContext},
+    };
+
+    struct DespawnSelf;
+
+    impl Script for DespawnSelf {
+        fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+            if let Some(id) = ctx.id() {
+                ctx.commands().despawn(id);
+            }
+        }
+    }
+
+    #[test]
+    fn deferred_despawn_applies_after_update_phase() {
+        let mut world = World::default();
+        world.spawn(Object::new("Transient").with(DespawnSelf));
+        world.start();
+
+        assert_eq!(world.query::<Transform>().len(), 1);
+        world.update(1.0 / 60.0);
+        assert!(world.query::<Transform>().is_empty());
     }
 }

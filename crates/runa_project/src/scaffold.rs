@@ -71,6 +71,7 @@ pub fn ensure_editor_bridge_files(project_root: &Path) -> Result<(), ProjectErro
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct AutoObjectSpec {
     id: String,
     name: String,
@@ -135,7 +136,7 @@ runa_engine = {{ path = "{runa_engine_path}" }}
 }
 
 fn generate_place_objects_rs(project_root: &Path) -> Result<String, ProjectError> {
-    let auto_objects = collect_auto_objects(&project_root.join("src"))?;
+    let _auto_objects = collect_auto_objects(&project_root.join("src"))?;
     let mut content = String::from(
         r#"use runa_engine::runa_project::{
     AudioSourceAsset, CameraAsset, MeshPrimitiveAsset, MeshRendererAsset,
@@ -145,36 +146,6 @@ fn generate_place_objects_rs(project_root: &Path) -> Result<String, ProjectError
 
 "#,
     );
-
-    for object in &auto_objects {
-        content.push_str(&format!(
-            r#"mod {module_name} {{
-    use runa_engine::runa_core::ocs::{{Object, Script}};
-    use runa_engine::runa_project::WorldObjectAsset;
-
-    include!({include_path:?});
-
-    pub fn spawn() -> Option<WorldObjectAsset> {{
-        let mut object = Object::new();
-        let script = {constructor_expr};
-        script.construct(&mut object);
-        let mut asset = WorldObjectAsset::from_object(&object);
-        if asset.name.is_empty() {{
-            asset.name = {name:?}.to_string();
-        }}
-        asset.object_id = Some({id:?}.to_string());
-        Some(asset)
-    }}
-}}
-
-"#,
-            module_name = object.module_name,
-            include_path = object.include_path,
-            constructor_expr = object.constructor_expr,
-            name = object.name,
-            id = object.id,
-        ));
-    }
 
     content.push_str(
         r#"pub fn descriptors() -> Vec<PlaceableObjectDescriptor> {
@@ -189,13 +160,6 @@ fn generate_place_objects_rs(project_root: &Path) -> Result<String, ProjectError
     ];
 "#,
     );
-    for object in &auto_objects {
-        content.push_str(&format!(
-            "    objects.push(descriptor({id:?}, {name:?}, \"Scripts\"));\n",
-            id = object.id,
-            name = object.name
-        ));
-    }
     content.push_str(
         r#"    objects
 }
@@ -211,13 +175,6 @@ pub fn spawn(object_id: &str) -> Option<WorldObjectAsset> {
         "audio-source" => Some(audio_source_object()),
 "#,
     );
-    for object in &auto_objects {
-        content.push_str(&format!(
-            "        {id:?} => {module_name}::spawn(),\n",
-            id = object.id,
-            module_name = object.module_name
-        ));
-    }
     content.push_str(
         r#"        _ => None,
     }
@@ -643,7 +600,7 @@ mod tests {
         assert!(loaded.startup_world_path().exists());
         assert_eq!(loaded.manifest.name, "Example Project");
         assert_eq!(loaded.manifest.binary_name, "example_project");
-        assert_eq!(world.objects.len(), 1);
+        assert_eq!(world.query::<runa_core::components::Transform>().len(), 1);
 
         let _ = fs::remove_dir_all(root);
     }

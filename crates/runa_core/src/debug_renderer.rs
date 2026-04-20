@@ -30,7 +30,10 @@ impl DebugRenderer {
             return;
         }
 
-        for object in &world.objects {
+        for object_id in world.query::<PhysicsCollision>() {
+            let Some(object) = world.get(object_id) else {
+                continue;
+            };
             if let (Some(_transform), Some(_collision)) = (
                 object.get_component::<Transform>(),
                 object.get_component::<PhysicsCollision>(),

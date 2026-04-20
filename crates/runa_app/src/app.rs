@@ -63,12 +63,35 @@ pub struct App<'window> {
 }
 
 impl<'window> App<'window> {
+    fn active_camera_id(&self) -> Option<runa_core::ocs::ObjectId> {
+        self.world
+            .query::<runa_core::components::ActiveCamera>()
+            .into_iter()
+            .find(|id| {
+                self.world
+                    .get(*id)
+                    .and_then(|object| object.get_component::<Camera>())
+                    .is_some()
+            })
+            .or_else(|| self.world.find_first_with::<Camera>())
+    }
+
     fn toggle_fullscreen(&mut self) {
         runa_core::input_system::toggle_fullscreen();
         self.config.fullscreen = runa_core::input_system::is_fullscreen().unwrap_or(false);
     }
 
     fn render(&mut self) {
+        let ortho_size = if self.active_camera_set {
+            self.active_camera_id()
+                .and_then(|id| self.world.get(id))
+                .and_then(|object| object.get_component::<Camera>())
+                .map(|camera| camera.ortho_size)
+                .unwrap_or(self.camera.ortho_size)
+        } else {
+            self.camera.ortho_size
+        };
+
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
             // Clear queue
             self.queue.clear();
@@ -87,18 +110,6 @@ impl<'window> App<'window> {
                 .unwrap_or_else(|| self.camera.matrix());
 
             // Get ortho_size from active camera if available, otherwise use default camera
-            let ortho_size = if self.active_camera_set {
-                // Try to get ortho_size from the active camera object
-                self.world
-                    .objects
-                    .iter()
-                    .find_map(|obj| obj.get_component::<Camera>())
-                    .map(|cam| cam.ortho_size)
-                    .unwrap_or(self.camera.ortho_size)
-            } else {
-                self.camera.ortho_size
-            };
-
             renderer.draw(&self.queue, camera_matrix, ortho_size);
 
             // Update FPS
@@ -131,40 +142,28 @@ impl<'window> App<'window> {
         self.camera_matrix_override = None;
         self.active_camera_set = false;
 
-        // First pass: Look for ActiveCamera marker
-        for object in &mut self.world.objects {
-            if object.get_component::<ActiveCamera>().is_some() {
-                // This object is marked as active camera
-                if let Some(camera) = object.get_component::<Camera>() {
-                    self.camera_matrix_override = Some(camera.matrix());
-                    self.active_camera_set = true;
-
-                    // Update camera viewport size to match window
-                    if let Some(renderer) = &self.renderer {
-                        let w = renderer.surface_config.width.max(1);
-                        let h = renderer.surface_config.height.max(1);
-                        if let Some(cam) = object.get_component_mut::<Camera>() {
-                            cam.viewport_size = (w, h);
-                        }
-                    }
-                    return;
-                }
-                // ActiveCamera exists but no Camera
-                break;
-            }
-        }
-
-        // Second pass: Use first available Camera
-        for object in &mut self.world.objects {
-            if let Some(camera) = object.get_component::<Camera>() {
+        if let Some(camera_id) = self.active_camera_id() {
+            if let Some(camera) = self
+                .world
+                .get(camera_id)
+                .and_then(|object| object.get_component::<Camera>())
+            {
                 self.camera_matrix_override = Some(camera.matrix());
+                self.active_camera_set = self
+                    .world
+                    .get(camera_id)
+                    .and_then(|object| object.get_component::<ActiveCamera>())
+                    .is_some();
 
-                // Update camera viewport size to match window
                 if let Some(renderer) = &self.renderer {
                     let w = renderer.surface_config.width.max(1);
                     let h = renderer.surface_config.height.max(1);
-                    if let Some(cam) = object.get_component_mut::<Camera>() {
-                        cam.viewport_size = (w, h);
+                    if let Some(camera) = self
+                        .world
+                        .get_mut(camera_id)
+                        .and_then(|object| object.get_component_mut::<Camera>())
+                    {
+                        camera.viewport_size = (w, h);
                     }
                 }
                 return;
@@ -259,10 +258,9 @@ impl<'window> ApplicationHandler for App<'window> {
                 let mut input_state = InputState::current_mut();
                 // Use active camera from world if available, otherwise use default camera
                 let camera_to_use = if self.active_camera_set {
-                    self.world
-                        .objects
-                        .iter()
-                        .find_map(|obj| obj.get_component::<Camera>())
+                    self.active_camera_id()
+                        .and_then(|id| self.world.get(id))
+                        .and_then(|object| object.get_component::<Camera>())
                         .cloned()
                         .unwrap_or(self.camera)
                 } else {
@@ -312,8 +310,7 @@ impl<'window> ApplicationHandler for App<'window> {
                     runa_core::input_system::initialize_window_state(
                         runa_core::input_system::window_title()
                             .unwrap_or_else(|| self.config.title.clone()),
-                        runa_core::input_system::is_fullscreen()
-                            .unwrap_or(self.config.fullscreen),
+                        runa_core::input_system::is_fullscreen().unwrap_or(self.config.fullscreen),
                         (new_size.width, new_size.height),
                     );
                     window.request_redraw();
@@ -388,7 +385,8 @@ impl<'window> ApplicationHandler for App<'window> {
         // Handle relative mouse movement (for locked cursor)
         if let DeviceEvent::MouseMotion { delta } = event {
             let mut input_state = InputState::current_mut();
-            input_state.mouse_delta = (delta.0 as f32, delta.1 as f32);
+            input_state.mouse_delta.0 += delta.0 as f32;
+            input_state.mouse_delta.1 += delta.1 as f32;
         }
     }
 }

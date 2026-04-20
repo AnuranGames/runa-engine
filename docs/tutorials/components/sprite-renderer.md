@@ -1,113 +1,46 @@
-# SpriteRenderer Component
+﻿# SpriteRenderer Component
 
-The `SpriteRenderer` component displays an image (texture) on the screen.
+`SpriteRenderer` displays a 2D texture.
 
-## Adding a SpriteRenderer
+Attach it during object composition:
 
 ```rust
-use runa_core::components::SpriteRenderer;
+use runa_engine::runa_asset::load_image;
+use runa_engine::runa_core::{components::SpriteRenderer, ocs::Object};
 
-object.add_component(SpriteRenderer {
-    texture: Some(runa_asset::load_image!("assets/sprite.png")),
-});
+let object = Object::new("Sprite")
+    .with(SpriteRenderer::new(Some(load_image!("assets/player.png"))));
 ```
 
-## Loading Images
-
-Use the `load_image!` macro to load images at compile time:
+## Player Example
 
 ```rust
-// Load an image from your assets folder
-let texture = runa_asset::load_image!("assets/character.png");
-
-// Add to SpriteRenderer
-object.add_component(SpriteRenderer {
-    texture: Some(texture),
-});
-```
-
-## Creating Without a Texture
-
-```rust
-object.add_component(SpriteRenderer {
-    texture: None, // No texture (invisible)
-});
-```
-
-## Complete Example: Player Sprite
-
-```rust
-use runa_core::{
+use runa_engine::runa_asset::load_image;
+use runa_engine::runa_core::{
     components::{SpriteRenderer, Transform},
-    ocs::{Object, Script},
-    World,
-    glam::Vec3,
+    ocs::{Object, Script, ScriptContext},
 };
 
-pub struct Player {
-    speed: f32,
-}
+pub struct PlayerController;
 
-impl Player {
-    pub fn new() -> Self {
-        Self { speed: 3.0 }
-    }
-}
-
-impl Script for Player {
-    fn construct(&self, object: &mut Object) {
-        object
-            .add_component(Transform::default())
-            .add_component(SpriteRenderer {
-                texture: Some(runa_asset::load_image!("assets/player.png")),
-            });
-    }
-
-    fn start(&mut self, object: &mut Object) {
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            transform.position = Vec3::new(0.0, 0.0, 0.0);
+impl Script for PlayerController {
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
+            transform.position.x += dt;
         }
     }
+}
 
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        // Player logic here
-    }
+fn create_player() -> Object {
+    Object::new("Player")
+        .with(Transform::default())
+        .with(SpriteRenderer::new(Some(load_image!("assets/player.png"))))
+        .with(PlayerController)
 }
 ```
 
-## File Paths
+## Notes
 
-Image paths are relative to your project's `Cargo.toml`:
-
-```rust
-// For a project with this structure:
-// my_game/
-//   Cargo.toml
-//   assets/
-//     sprites/
-//       player.png
-
-runa_asset::load_image!("assets/sprites/player.png")
-```
-
-## Supported Formats
-
-The engine supports common image formats:
-
-- PNG (recommended)
-- JPG
-- GIF
-- BMP
-- TGA
-
-## Tips
-
-- PNG is recommended for game assets (supports transparency)
-- Keep sprite sizes as powers of 2 (32x32, 64x64, 128x128, etc.)
-- Use texture atlases for better performance
-
-## Next Steps
-
-- [Transform](transform.md) for positioning sprites
-- [Tilemap](../tilemap/tilemap.md) for level backgrounds
-- [Animation](animation.md) for animated sprites
+- PNG is the most practical default format
+- attach `Transform` alongside `SpriteRenderer` for placement
+- keep rendering data in components and behavior in scripts

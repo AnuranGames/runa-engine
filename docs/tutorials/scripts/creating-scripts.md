@@ -1,146 +1,127 @@
 # Creating Scripts
 
-Scripts are the primary way to add behavior to game objects in Runa Engine. This tutorial shows you how to create and use scripts.
+Scripts are attachable behavior components in Runa.
 
-## What is a Script?
+They no longer construct objects. Composition is explicit and happens before the object enters the world.
 
-A script is a Rust trait that defines how a game object behaves. Scripts have a lifecycle with three main methods:
+## Current Script Model
 
-1. **`construct()`** - Called once when the object is created
-2. **`start()`** - Called once when the object enters the world
-3. **`update()`** - Called every frame while the object exists
+A script:
 
-## Creating a Basic Script
+- attaches to an existing `Object`
+- reads and mutates that object's components
+- queries the world through `ScriptContext`
+- queues world mutations through commands
 
-### Step 1: Define Your Script Struct
+Current lifecycle:
+
+1. `start()`
+2. `update()`
+
+## Basic Script
 
 ```rust
-use runa_core::{
-    ocs::Script,
-    ocs::Object,
-};
+use runa_engine::runa_core::ocs::{Script, ScriptContext};
 
-pub struct MyScript {
+pub struct MoveRight {
     speed: f32,
 }
 
-impl MyScript {
+impl MoveRight {
     pub fn new() -> Self {
         Self { speed: 1.0 }
     }
 }
-```
 
-### Step 2: Implement the Script Trait
-
-```rust
-impl Script for MyScript {
-    /// Called once when the object is created
-    fn construct(&self, object: &mut Object) {
-        // Add components to the object
-        // This happens before the object enters the world
-    }
-
-    /// Called once on the first frame
-    fn start(&mut self, object: &mut Object) {
-        // Initialize state, access other objects
-        // This is called after the object is in the world
-    }
-
-    /// Called every frame
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        // Game logic goes here
-        // dt = delta time in seconds
-    }
-}
-```
-
-## Complete Example: Rotating Sprite
-
-```rust
-use runa_core::{
-    components::{SpriteRenderer, Transform},
-    ocs::{Object, Script},
-    glam::Vec3,
-};
-
-pub struct RotatingSprite {
-    rotation_speed: f32,
-}
-
-impl RotatingSprite {
-    pub fn new() -> Self {
-        Self { rotation_speed: 90.0 } // 90 degrees per second
-    }
-}
-
-impl Script for RotatingSprite {
-    fn construct(&self, object: &mut Object) {
-        // Add components
-        object
-            .add_component(Transform::default())
-            .add_component(SpriteRenderer {
-                texture: Some(runa_asset::load_image!("assets/sprite.png")),
-            });
-    }
-
-    fn start(&mut self, object: &mut Object) {
-        // Set initial position
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            transform.position = Vec3::new(0.0, 0.0, 0.0);
-        }
-    }
-
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        // Rotate the object
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            transform.rotate_z(self.rotation_speed * dt);
+impl Script for MoveRight {
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
+            transform.position.x += self.speed * dt;
         }
     }
 }
 ```
 
-## Adding Your Script to the World
+## Attaching A Script
 
 ```rust
-fn main() {
-    let mut world = World::default();
-
-    // Spawn your script
-    world.spawn(Box::new(RotatingSprite::new()));
-
-    // ... rest of setup
+fn create_object() -> Object {
+    Object::new("Mover")
+        .with(SpriteRenderer::default())
+        .with(MoveRight::new())
 }
 ```
 
-## Accessing Components
-
-Scripts can get and modify components on their object:
+## Querying The World
 
 ```rust
-fn update(&mut self, object: &mut Object, dt: f32) {
-    // Get a component (returns Option)
-    if let Some(transform) = object.get_component::<Transform>() {
-        println!("Position: {:?}", transform.position);
-    }
-
-    // Get a mutable component
-    if let Some(transform) = object.get_component_mut::<Transform>() {
-        transform.position.x += 1.0 * dt;
+impl Script for EnemyAI {
+    fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+        if let Some(player_id) = ctx.find_first_with::<PlayerMarker>() {
+            let player = ctx.get_object(player_id);
+            let _ = player;
+        }
     }
 }
 ```
 
-## Lifecycle Summary
+## Queuing World Changes
 
-| Method        | When Called                      | Use For                               |
-| ------------- | -------------------------------- | ------------------------------------- |
-| `construct()` | Once, before object enters world | Adding components                     |
-| `start()`     | Once, on first frame             | Initialization, finding other objects |
-| `update()`    | Every frame                      | Game logic, movement, input           |
+Do not rely on direct mutable world access from script update logic.
 
-## Next Steps
+Use commands instead:
 
-- Learn about [Transform](../components/transform.md) for position and rotation
-- Explore [Input](../systems/input.md) for player controls
-- Check out [Audio](../systems/audio.md) for playing sounds
+```rust
+impl Script for Lifetime {
+    fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+        if let Some(id) = ctx.id() {
+            ctx.commands().despawn(id);
+        }
+    }
+}
+```
+
+The command is applied after the lifecycle/update phase.
+
+## Why `construct()` Was Removed
+
+Older Runa scripts used `construct()` to add components from inside the script.
+
+That made scripts:
+
+- behavior code
+- object factories
+- tooling integration points
+
+at the same time.
+
+The current model is simpler:
+
+- object factories build the object
+- scripts define runtime behavior
+- world/object/component serialization can target the actual runtime graph
+
+## Optional Derive
+
+If you use the umbrella crate, you can mark script types with:
+
+```rust
+use runa_engine::RunaScript;
+
+#[derive(RunaScript)]
+pub struct EnemyAI;
+```
+
+That does not auto-register the script. It only gives you explicit bootstrap helpers like:
+
+```rust
+EnemyAI::register(&mut engine);
+```
+
+## Migration Summary
+
+- move object assembly out of scripts
+- build objects explicitly with `Object::new(...).with(...)`
+- attach behavior with `.with(MyScript::new())`
+- use `ctx.commands()` for world mutations
+- use `ctx.world()` / `ctx.find_first_with::<T>()` for simple queries

@@ -15,7 +15,7 @@ use runa_core::components::{
     Mesh, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision, Transform,
 };
 use runa_core::glam::{Vec2, Vec3};
-use runa_core::ocs::Object;
+use runa_core::ocs::{Object, ObjectId};
 use runa_core::World;
 use runa_project::{
     create_empty_project, create_empty_world, ensure_editor_bridge_files, find_project_manifest,
@@ -86,7 +86,7 @@ struct ProjectLoadResult {
 
 struct ObjectClipboard {
     asset: WorldObjectAsset,
-    cut_index: Option<usize>,
+    cut_id: Option<ObjectId>,
 }
 
 struct PlaceObjectState {
@@ -120,7 +120,7 @@ pub struct EditorApp<'window> {
 
     world: World,
     scene_queue: RenderQueue,
-    selection: Option<usize>,
+    selection: Option<ObjectId>,
     content_browser: ContentBrowserState,
     panels: PanelState,
     settings: EditorSettings,
@@ -150,9 +150,19 @@ pub struct EditorApp<'window> {
 }
 
 impl<'window> EditorApp<'window> {
+    fn world_object_ids(&self) -> Vec<ObjectId> {
+        self.world.query::<Transform>()
+    }
+
+    fn first_object_id(&self) -> Option<ObjectId> {
+        self.world.find_first_with::<Transform>()
+    }
+
     fn new(project_path: Option<PathBuf>) -> Self {
         let startup_root = std::env::current_dir().unwrap_or_default();
         let (output_tx, output_rx) = mpsc::channel();
+        let world = create_preview_world();
+        let selection = world.find_first_with::<Transform>();
         let project_dialog = ProjectDialogState {
             open: false,
             name: "MyGame".to_string(),
@@ -178,9 +188,9 @@ impl<'window> EditorApp<'window> {
             egui_state: None,
             egui_renderer: None,
             egui_ctx: egui::Context::default(),
-            world: create_preview_world(),
+            world,
             scene_queue: RenderQueue::new(),
-            selection: Some(0),
+            selection,
             content_browser: ContentBrowserState::new(startup_root),
             panels: PanelState::default(),
             editor_camera: EditorCameraController::new(),
@@ -467,25 +477,27 @@ impl<'window> EditorApp<'window> {
                 .show(ctx, |ui| {
                     ui.heading("Hierarchy");
                     ui.separator();
-                    let hierarchy_items: Vec<String> = self
-                        .world
-                        .objects
-                        .iter()
-                        .enumerate()
-                        .map(|(index, object)| object_title(index, object))
+                    let hierarchy_items: Vec<(ObjectId, String)> = self
+                        .world_object_ids()
+                        .into_iter()
+                        .filter_map(|object_id| {
+                            self.world
+                                .get(object_id)
+                                .map(|object| (object_id, object_title(object)))
+                        })
                         .collect();
                     egui::ScrollArea::vertical()
                         .id_salt("hierarchy_scroll")
                         .show(ui, |ui| {
-                            for (index, title) in hierarchy_items.iter().enumerate() {
-                                let selected = self.selection == Some(index);
+                            for (object_id, title) in &hierarchy_items {
+                                let selected = self.selection == Some(*object_id);
                                 let response = ui.selectable_label(selected, title);
                                 if response.clicked() {
-                                    self.selection = Some(index);
+                                    self.selection = Some(*object_id);
                                 }
                                 response.context_menu(|ui| {
-                                    self.selection = Some(index);
-                                    self.hierarchy_context_menu_ui(ui, Some(index));
+                                    self.selection = Some(*object_id);
+                                    self.hierarchy_context_menu_ui(ui, Some(*object_id));
                                 });
                             }
                             let blank_response = ui.allocate_response(
@@ -507,8 +519,8 @@ impl<'window> EditorApp<'window> {
                 .show(ctx, |ui| {
                     ui.heading("Inspector");
                     ui.separator();
-                    if let Some(index) = self.selection {
-                        if let Some(object) = self.world.objects.get_mut(index) {
+                    if let Some(object_id) = self.selection {
+                        if let Some(object) = self.world.get_mut(object_id) {
                             let project_root = self
                                 .project_session
                                 .as_ref()
@@ -714,11 +726,7 @@ impl<'window> EditorApp<'window> {
 
     fn new_world(&mut self) {
         self.world = create_empty_world();
-        self.selection = if self.world.objects.is_empty() {
-            None
-        } else {
-            Some(0)
-        };
+        self.selection = self.first_object_id();
         if let Some(session) = self.project_session.as_mut() {
             session.current_world_path = None;
         }
@@ -777,11 +785,7 @@ impl<'window> EditorApp<'window> {
             project: result.project.clone(),
         });
         self.world = world;
-        self.selection = if self.world.objects.is_empty() {
-            None
-        } else {
-            Some(0)
-        };
+        self.selection = self.first_object_id();
         self.content_browser
             .set_project_root(result.project.root_dir.clone(), &self.settings);
         let merged_records = merge_placeable_object_records(result.object_records);
@@ -817,11 +821,7 @@ impl<'window> EditorApp<'window> {
         match load_world(&path) {
             Ok(world) => {
                 self.world = world;
-                self.selection = if self.world.objects.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                };
+                self.selection = self.first_object_id();
                 if let Some(session) = self.project_session.as_mut() {
                     session.current_world_path = Some(path.clone());
                 }
@@ -1014,14 +1014,14 @@ impl<'window> EditorApp<'window> {
             });
     }
 
-    fn hierarchy_context_menu_ui(&mut self, ui: &mut egui::Ui, target_index: Option<usize>) {
-        if let Some(index) = target_index {
+    fn hierarchy_context_menu_ui(&mut self, ui: &mut egui::Ui, target_id: Option<ObjectId>) {
+        if let Some(object_id) = target_id {
             if ui.button("Copy").clicked() {
-                self.copy_object(index, false);
+                self.copy_object(object_id, false);
                 ui.close();
             }
             if ui.button("Cut").clicked() {
-                self.copy_object(index, true);
+                self.copy_object(object_id, true);
                 ui.close();
             }
             if ui
@@ -1031,11 +1031,11 @@ impl<'window> EditorApp<'window> {
                 )
                 .clicked()
             {
-                self.paste_object(target_index);
+                self.paste_object(target_id);
                 ui.close();
             }
             if ui.button("Delete").clicked() {
-                self.delete_object(index);
+                self.delete_object(object_id);
                 ui.close();
             }
             ui.separator();
@@ -1054,13 +1054,13 @@ impl<'window> EditorApp<'window> {
         self.place_object_menu_ui(ui);
     }
 
-    fn copy_object(&mut self, index: usize, cut: bool) {
-        let Some(object) = self.world.objects.get(index) else {
+    fn copy_object(&mut self, object_id: ObjectId, cut: bool) {
+        let Some(object) = self.world.get(object_id) else {
             return;
         };
         self.hierarchy_clipboard = Some(ObjectClipboard {
             asset: WorldObjectAsset::from_object(object),
-            cut_index: cut.then_some(index),
+            cut_id: cut.then_some(object_id),
         });
         self.status_line = if cut {
             "Cut object.".to_string()
@@ -1069,7 +1069,7 @@ impl<'window> EditorApp<'window> {
         };
     }
 
-    fn paste_object(&mut self, target_index: Option<usize>) {
+    fn paste_object(&mut self, _target_id: Option<ObjectId>) {
         let Some(clipboard) = self.hierarchy_clipboard.take() else {
             return;
         };
@@ -1084,32 +1084,17 @@ impl<'window> EditorApp<'window> {
             }
         }
 
-        let mut insert_index = target_index
-            .map(|index| index + 1)
-            .unwrap_or(self.world.objects.len());
-        if let Some(cut_index) = clipboard.cut_index {
-            if cut_index < self.world.objects.len() {
-                self.world.objects.remove(cut_index);
-                if cut_index < insert_index {
-                    insert_index = insert_index.saturating_sub(1);
-                }
-            }
+        if let Some(cut_id) = clipboard.cut_id {
+            self.world.despawn(cut_id);
         }
-        self.world.objects.insert(insert_index, object);
-        self.selection = Some(insert_index);
+        let new_id = self.world.spawn(object);
+        self.selection = Some(new_id);
         self.status_line = "Pasted object.".to_string();
     }
 
-    fn delete_object(&mut self, index: usize) {
-        if index >= self.world.objects.len() {
-            return;
-        }
-        self.world.objects.remove(index);
-        self.selection = if self.world.objects.is_empty() {
-            None
-        } else {
-            Some(index.min(self.world.objects.len() - 1))
-        };
+    fn delete_object(&mut self, object_id: ObjectId) {
+        self.world.despawn(object_id);
+        self.selection = self.first_object_id();
         self.status_line = "Deleted object.".to_string();
     }
 
@@ -1334,8 +1319,8 @@ impl<'window> EditorApp<'window> {
             world_object.add_component(ObjectDefinitionInstance::new(object.id.clone()));
         }
 
-        self.world.objects.push(world_object);
-        self.selection = Some(self.world.objects.len().saturating_sub(1));
+        let object_id = self.world.spawn(world_object);
+        self.selection = Some(object_id);
         self.status_line = format!("Placed object {}.", object.name);
     }
 
@@ -1538,8 +1523,7 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
 fn create_preview_world() -> World {
     let mut world = World::default();
 
-    let mut cube = Object::new();
-    cube.name = "Preview Cube".to_string();
+    let mut cube = Object::new("Preview Cube");
     let mut cube_transform = Transform::default();
     cube_transform.position = Vec3::new(0.0, 0.6, 0.0);
     cube_transform.scale = Vec3::splat(1.2);
@@ -1547,10 +1531,9 @@ fn create_preview_world() -> World {
     let mut cube_mesh = MeshRenderer::new(Mesh::cube(1.5));
     cube_mesh.color = [1.0, 0.55, 0.2, 1.0];
     cube.add_component(cube_mesh);
-    world.objects.push(cube);
+    world.spawn(cube);
 
-    let mut floor = Object::new();
-    floor.name = "Floor".to_string();
+    let mut floor = Object::new("Floor");
     let mut floor_transform = Transform::default();
     floor_transform.position = Vec3::new(0.0, -1.5, 0.0);
     floor_transform.scale = Vec3::new(8.0, 0.2, 8.0);
@@ -1559,14 +1542,17 @@ fn create_preview_world() -> World {
     floor_mesh.color = [0.24, 0.27, 0.32, 1.0];
     floor.add_component(floor_mesh);
     floor.add_component(PhysicsCollision::new(8.0, 8.0));
-    world.objects.push(floor);
+    world.spawn(floor);
 
     world
 }
 
-fn object_title(index: usize, object: &Object) -> String {
+fn object_title(object: &Object) -> String {
     if object.name.is_empty() {
-        format!("Object {}", index)
+        object
+            .id()
+            .map(|id| format!("Object {}", id))
+            .unwrap_or_else(|| "Object".to_string())
     } else {
         object.name.clone()
     }

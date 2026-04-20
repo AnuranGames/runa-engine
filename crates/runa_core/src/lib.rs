@@ -4,10 +4,15 @@ mod console;
 pub mod debug_renderer;
 pub mod input;
 pub mod ocs;
+pub mod registry;
 pub mod systems;
 
 pub use console::Console;
 pub use ocs::World;
+pub use registry::{
+    ArchetypeKey, ArchetypeMetadata, ArchetypeRegistry, RegisteredTypeKind, RegistrationSource,
+    RunaArchetype, RunaComponentType, RunaScriptType, RuntimeRegistry, TypeMetadata, TypeRegistry,
+};
 
 pub mod input_system {
     pub use crate::input::center_window;

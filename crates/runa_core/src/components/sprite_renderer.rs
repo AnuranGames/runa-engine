@@ -1,4 +1,3 @@
-use crate::components::component::Component;
 use runa_asset::Handle;
 use runa_asset::TextureAsset;
 
@@ -41,4 +40,3 @@ impl SpriteRenderer {
     }
 }
 
-impl Component for SpriteRenderer {}

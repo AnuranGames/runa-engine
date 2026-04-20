@@ -1,29 +1,39 @@
 # Creating Your First App
 
-This tutorial shows you how to create a basic Runa Engine application.
+This tutorial shows the smallest useful Runa application using the current runtime model.
 
-## Step 1: Set Up Your Project
-
-In your `Cargo.toml`, add the Runa Engine crates:
+## Dependency
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/Runa-Engine/runa.git", tag = "<current version>" }
+runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.3.0-alpha.1" }
 ```
-For current version look in [REAME](README.md) 
-## Step 2: Create the Main Function
 
-Every Runa Engine app starts with a `main()` function that sets up the world and launches the application:
+## Minimal App
 
 ```rust
-use runa_app::{RunaApp, RunaWindowConfig};
-use runa_core::World;
+use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    Engine, RunaArchetype,
+};
+use runa_engine::runa_core::ocs::{Object, World};
+
+#[derive(RunaArchetype)]
+struct EmptyArchetype;
+
+impl EmptyArchetype {
+    fn create(world: &mut World) -> u64 {
+        world.spawn(Object::new("Empty"))
+    }
+}
 
 fn main() {
-    // Create a new world to hold game objects and systems
-    let mut world = World::default();
+    let mut engine = Engine::new();
+    engine.register_archetype::<EmptyArchetype>();
 
-    // Configure the application window
+    let mut world = engine.create_world();
+    let _ = world.spawn_archetype::<EmptyArchetype>();
+
     let config = RunaWindowConfig {
         title: "My First Game".to_string(),
         width: 1280,
@@ -34,52 +44,42 @@ fn main() {
         window_icon: None,
     };
 
-    // Launch the engine
     let _ = RunaApp::run_with_config(world, config);
 }
 ```
 
-## Step 3: Initialize Audio (Optional)
+## What Is Happening
 
-If you want to use audio in your game, initialize the audio engine:
+- `Engine` holds explicit runtime registration state
+- `register_archetype::<T>()` registers a typed code-first object factory
+- `create_world()` returns a `World` that knows about that registry
+- `spawn_archetype::<T>()` instantiates the object and gives it an `ObjectId`
+
+You can still build objects manually and call `world.spawn(...)` directly. The engine/bootstrap layer is optional, but it is now the recommended place for:
+
+- type registration
+- archetype registration
+- future serialization/editor bootstrap hooks
+
+## Manual Spawn Variant
 
 ```rust
-let mut world = World::default();
+use runa_engine::runa_core::ocs::Object;
 
-// Initialize audio engine
-world.audio_engine.initialize().expect("Failed to initialize audio");
+let mut world = Engine::new().create_world();
+let id = world.spawn(Object::new("Manual Object"));
+let object = world.get(id);
 ```
 
-## Step 4: Add Game Objects
+## Notes
 
-Game objects are created by spawning scripts. Here's a simple example:
-
-```rust
-// Spawn a game object with a script
-world.spawn(Box::new(MyObject::new()));
-```
-
-## Step 5: Run Your App
-
-Build and run your project:
-
-```bash
-cargo run
-```
-
-## Window Configuration Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `title` | Window title | "Runa Game" |
-| `width` | Window width in pixels | 1280 |
-| `height` | Window height in pixels | 720 |
-| `fullscreen` | Start in fullscreen mode | false |
-| `vsync` | Enable vertical sync | true |
-| `show_fps_in_title` | Show FPS in window title | false |
+- `Object::new(...)` already includes a default `Transform`
+- scripts are attached with `.with(MyScript::new())`
+- scripts do not construct objects
+- world mutations during script update should go through `ctx.commands()`
 
 ## Next Steps
 
-- Learn about [Scripts](../scripts/creating-scripts.md) to add behavior to objects
-- Explore [Components](../components/transform.md) to add properties to objects
-- Check out the [Input](../systems/input.md) system for player controls
+- [Creating Scripts](../scripts/creating-scripts.md)
+- [Creating a 2D Game](creating-a-2d-game.md)
+- [Creating a 3D Game](creating-a-3d-game.md)

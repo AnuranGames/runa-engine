@@ -1,99 +1,85 @@
-﻿# Runa Engine
+# Runa Engine
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE-MIT)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE-APACHE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
 
-**Runa Engine** is an experimental Rust game engine workspace focused on a small script-driven runtime, a `wgpu` renderer, and in-repo tooling for project creation and scene editing.
+Runa Engine is an experimental Rust game engine workspace built around a code-first runtime, a `wgpu` renderer, project tooling, and an optional editor.
 
-> **Status:** Pre-Alpha. APIs are unstable, tooling is still evolving, and the engine is not ready for production use.
+> Status: pre-alpha. APIs are still evolving. The runtime is usable for prototypes and internal tools, but the engine is not production-ready yet.
 
-## Current State
+## What Runa Is
 
-Runa is currently a **single-window runtime** with:
+Runa is a workspace, not just one crate. It currently includes:
 
-- 2D sprite rendering
-- Tilemaps
-- Basic 3D mesh rendering
-- Script-driven objects
-- Global input API
-- Basic audio and spatial audio
-- World/project serialization in RON
-- Experimental editor and hub applications
+- `runa_core`: world, objects, components, scripts, input, audio
+- `runa_app`: runtime app loop and window bootstrap
+- `runa_render`: `wgpu` renderer
+- `runa_asset`: asset loading helpers
+- `runa_project`: project and world serialization/scaffolding
+- `runa_editor`: optional editor
+- `runa_hub`: optional launcher/project hub
+- `runa_engine`: umbrella crate for normal game-side usage
 
-The repository is a workspace, not just a runtime crate. It contains runtime, rendering, assets, project scaffolding, editor, and launcher tools.
+The runtime is code-first:
+
+- `World` owns `Object`s
+- `Object` is a component container with `ObjectId`
+- `Transform` exists on every object by default
+- scripts are attachable behavior components
+- objects are composed explicitly in Rust code
 
 ## What Works Today
 
 ### Runtime
 
-- `World`, `Object`, and `Script` lifecycle (`construct`, `start`, `update`)
-- `Transform`, `SpriteRenderer`, `MeshRenderer`, `Tilemap`, `Camera`, `AudioSource`
-- Unified 2D/3D camera component
-- Cursor interaction via `CursorInteractable`
-- Simple 2D AABB overlap detection via `Collider2D`
-- Window control from scripts:
-  - change window title
-  - toggle/set fullscreen
-  - resize the main window
-  - move the main window on screen
-  - query the center of the current monitor
-  - center the window on the current monitor
+- object/component world model
+- attachable script behaviors with `start()` and `update()`
+- `ObjectId`-based lookup and simple queries
+- deferred world commands from scripts
+- archetype registration and spawning
+- type metadata registration for components and scripts
 
 ### Rendering
 
-- 2D textured sprites
-- Tilemap rendering with negative coordinates
-- Basic 3D mesh path with depth buffer
-- Offscreen render target support used by the editor
+- 2D sprite rendering
+- tilemaps
+- basic 3D mesh rendering
+- unified camera component for 2D/3D
+- offscreen render targets used by the editor
+
+### Systems
+
+- global input API
+- window control from scripts
+- basic audio and spatial audio
+- simple 2D AABB collision detection with `Collider2D`
+- cursor interaction
 
 ### Tooling
 
 - `.runaproj` project manifest
 - world save/load in RON
-- project scaffolding through `runa_project`
-- `runa_editor` for scene inspection/editing
-- `runa_hub` for creating/opening projects
+- project scaffolding
+- experimental editor
+- experimental hub/launcher
 
-## Current Limitations
+## Current Limits
 
-- Single runtime window only
-- No full physics engine
-- No mature animation system
-- No stable shader/material pipeline for user-defined shaders
-- 3D support is still basic and experimental
-- Editor and hub are usable but not feature-complete
-- API stability is not guaranteed between alpha builds
-
-## Workspace Layout
-
-```text
-runa-engine/
-├── crates/
-│   ├── runa_app/         # Runtime app loop and window setup
-│   ├── runa_asset/       # Asset loading helpers
-│   ├── runa_core/        # World, components, scripts, input, audio
-│   ├── runa_editor/      # Experimental editor
-│   ├── runa_engine/      # Umbrella re-export crate
-│   ├── runa_hub/         # Experimental launcher/project hub
-│   ├── runa_project/     # Project manifests, world serialization, scaffolding
-│   ├── runa_render/      # wgpu renderer
-│   └── runa_render_api/  # Render command layer
-├── docs/
-├── examples/
-│   ├── sandbox/
-│   ├── sandbox_3d/
-│   └── sandbox_soundtest/
-├── CHANGELOG.md
-└── Cargo.toml
-```
+- single runtime window only
+- no full physics engine
+- no mature animation pipeline
+- 3D support is still basic
+- generic registry-driven serialization is not finished yet
+- editor is optional and incomplete
+- API stability is not guaranteed between alpha revisions
 
 ## Quick Start
 
 ### Requirements
 
 - Rust 1.75+
-- A GPU/backend supported by `wgpu`
+- GPU/backend supported by `wgpu`
 
 ### Run a bundled example
 
@@ -101,30 +87,52 @@ runa-engine/
 cargo run -p sandbox
 ```
 
-### Use the umbrella crate
+### Add Runa to a new project
+
+Current latest public tag: [`v0.3.0-alpha.1`](https://github.com/RunaGameEngine/runa/releases/tag/v0.3.0-alpha.1)
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/Runa-Engine/runa.git", tag = "v0.2.0-alpha.2" }
+runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.3.0-alpha.1" }
 ```
 
-## Minimal 2D Example
+If you want to track the repository head instead of a tag:
+
+```toml
+[dependencies]
+runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", branch = "main" }
+```
+
+## Quick Guide
+
+Minimal startup:
 
 ```rust
-use runa_engine::runa_app::{RunaApp, RunaWindowConfig};
-use runa_engine::runa_core::{
-    components::{ActiveCamera, Camera, SpriteRenderer, Transform},
-    input_system::*,
-    ocs::Script,
-    Vec3, World,
+use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    Engine, RunaArchetype,
 };
+use runa_engine::runa_core::ocs::{Object, World};
+
+#[derive(RunaArchetype)]
+#[runa(name = "player")]
+struct PlayerArchetype;
+
+impl PlayerArchetype {
+    fn create(world: &mut World) -> u64 {
+        world.spawn(Object::new("Player"))
+    }
+}
 
 fn main() {
-    let mut world = World::default();
-    world.spawn(Box::new(Player::new()));
+    let mut engine = Engine::new();
+    engine.register_archetype::<PlayerArchetype>();
+
+    let mut world = engine.create_world();
+    let _ = world.spawn_archetype::<PlayerArchetype>();
 
     let config = RunaWindowConfig {
-        title: "My 2D Game".to_string(),
+        title: "My Game".to_string(),
         width: 1280,
         height: 720,
         fullscreen: false,
@@ -135,82 +143,88 @@ fn main() {
 
     let _ = RunaApp::run_with_config(world, config);
 }
+```
 
-struct Player {
+Typical gameplay object:
+
+```rust
+use runa_engine::runa_asset::load_image;
+use runa_engine::runa_core::{
+    components::{ActiveCamera, Camera, SpriteRenderer},
+    ocs::{Object, Script, ScriptContext},
+    Vec3,
+};
+
+struct PlayerController {
     speed: f32,
 }
 
-impl Player {
+impl PlayerController {
     fn new() -> Self {
         Self { speed: 0.25 }
     }
 }
 
-impl Script for Player {
-    fn construct(&self, object: &mut runa_engine::runa_core::ocs::Object) {
-        object
-            .add_component(Transform::default())
-            .add_component(Camera::new_ortho(320.0, 180.0, (1280, 720)))
-            .add_component(ActiveCamera)
-            .add_component(SpriteRenderer::new(Some(
-                runa_engine::runa_asset::load_image!("assets/Charactert.png"),
-            )));
-    }
-
-    fn update(&mut self, object: &mut runa_engine::runa_core::ocs::Object, _dt: f32) {
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            let mut direction = Vec3::ZERO;
-            if Input::is_key_pressed(KeyCode::KeyW) {
-                direction.y += 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyS) {
-                direction.y -= 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyA) {
-                direction.x -= 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyD) {
-                direction.x += 1.0;
-            }
-            transform.position += direction.normalize_or_zero() * self.speed;
+impl Script for PlayerController {
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        if let Some(transform) = ctx.get_component_mut::<runa_engine::runa_core::components::Transform>() {
+            transform.position += Vec3::X * self.speed * dt;
         }
     }
 }
-```
 
-## Script Window Control Example
-
-```rust
-use runa_engine::runa_core::input_system::*;
-
-if Input::is_key_just_pressed(KeyCode::F1) {
-    set_window_title("Debug Mode");
-}
-
-if Input::is_key_just_pressed(KeyCode::F2) {
-    toggle_fullscreen();
-}
-
-if Input::is_key_just_pressed(KeyCode::F3) {
-    set_window_size(1600, 900);
-}
-
-if Input::is_key_just_pressed(KeyCode::F4) {
-    center_window();
-}
-
-if Input::is_key_pressed(KeyCode::ArrowRight) {
-    move_window_by(8, 0);
+fn create_player() -> Object {
+    Object::new("Player")
+        .with(Camera::new_ortho(320.0, 180.0, (1280, 720)))
+        .with(ActiveCamera)
+        .with(SpriteRenderer::new(Some(load_image!("assets/art/player.png"))))
+        .with(PlayerController::new())
 }
 ```
+
+## How To Start Making A Game
+
+1. Create an `Engine`.
+2. Register your components/scripts/archetypes in one bootstrap function.
+3. Create a `World` from the engine.
+4. Spawn your archetypes or objects.
+5. Run the app with `RunaApp::run_with_config(...)`.
+
+Recommended project shape:
+
+```text
+src/
+  main.rs
+  player.rs
+  enemy.rs
+  world_setup.rs
+assets/
+```
+
+Good practice in Runa:
+
+- keep object composition in typed archetypes or explicit factory functions
+- keep behavior in scripts
+- use typed marker/data components instead of string tags
+- use `ObjectId` and queries for object communication
 
 ## Documentation
 
 - [Tutorial Index](docs/tutorials/README.md)
-- [Create a 2D Game](docs/tutorials/getting-started/creating-a-2d-game.md)
-- [Create a 3D Game](docs/tutorials/getting-started/creating-a-3d-game.md)
-- [Input System](docs/tutorials/systems/input.md)
-- [Renderer Notes](docs/architecture/renderer.md)
+- [Creating Your First App](docs/tutorials/getting-started/creating-your-first-app.md)
+- [Creating a 2D Game](docs/tutorials/getting-started/creating-a-2d-game.md)
+- [Creating a 3D Game](docs/tutorials/getting-started/creating-a-3d-game.md)
+- [Creating Scripts](docs/tutorials/scripts/creating-scripts.md)
+- [Transform](docs/tutorials/components/transform.md)
+- [Input](docs/tutorials/systems/input.md)
+- [Object Model Notes](docs/architecture/object-model.md)
+- [Registration And Archetypes](docs/tutorials/advanced/registration-and-archetypes.md)
+
+## Repository
+
+- GitHub: <https://github.com/RunaGameEngine/runa>
+- Releases: <https://github.com/RunaGameEngine/runa/releases>
+- Tags: <https://github.com/RunaGameEngine/runa/tags>
 
 ## License
 

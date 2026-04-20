@@ -143,11 +143,10 @@ pub struct TilemapLayerAsset {
 pub fn create_empty_world() -> World {
     let mut world = World::default();
 
-    let mut camera = Object::new();
-    camera.name = "Main Camera".to_string();
+    let mut camera = Object::new("Main Camera");
     camera.add_component(Camera::default());
     camera.add_component(ActiveCamera);
-    world.objects.push(camera);
+    world.spawn(camera);
 
     world
 }
@@ -187,8 +186,9 @@ impl WorldAsset {
     pub fn from_world(world: &World) -> Self {
         Self {
             objects: world
-                .objects
-                .iter()
+                .query::<Transform>()
+                .into_iter()
+                .filter_map(|object_id| world.get(object_id))
                 .map(WorldObjectAsset::from_object)
                 .collect(),
         }
@@ -200,11 +200,9 @@ impl WorldAsset {
 
     pub fn into_world_with_project_root(self, project_root: Option<&Path>) -> World {
         let mut world = World::default();
-        world.objects = self
-            .objects
-            .into_iter()
-            .map(|object| object.into_object(project_root))
-            .collect();
+        for object in self.objects.into_iter().map(|object| object.into_object(project_root)) {
+            world.spawn(object);
+        }
         world
     }
 
@@ -217,11 +215,13 @@ impl WorldAsset {
         F: Fn(&str) -> Option<WorldObjectAsset>,
     {
         let mut world = World::default();
-        world.objects = self
+        for object in self
             .objects
             .into_iter()
             .map(|object| object.into_object_with_object_loader(project_root, &object_loader))
-            .collect();
+        {
+            world.spawn(object);
+        }
         world
     }
 }
@@ -263,8 +263,7 @@ impl WorldObjectAsset {
 
     pub fn into_object(self, project_root: Option<&Path>) -> Object {
         let object_id = self.object_id.clone();
-        let mut object = Object::new();
-        object.name = self.name;
+        let mut object = Object::new(self.name);
         object.add_component(self.transform.into_component());
 
         if let Some(mesh_renderer) = self.mesh_renderer {

@@ -1,27 +1,32 @@
 // #![windows_subsystem = "windows"]
 
-use runa_app::{RunaApp, RunaWindowConfig};
-use runa_core::World;
+use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    Engine,
+};
 
-mod player;
 mod collider_demo;
+mod player;
 mod tester1;
 mod tilemap_tester;
 
-use collider_demo::ColliderDemoBox;
-use tilemap_tester::TilemapTester;
+fn register_game_types(engine: &mut Engine) {
+    player::register_types(engine);
+    engine.register_archetype::<tilemap_tester::TilemapTesterArchetype>();
+    engine.register_archetype::<tester1::RotatingSpriteArchetype>();
+    engine.register_archetype::<collider_demo::ColliderDemoBoxArchetype>();
+}
 
 fn main() {
-    // Create a new empty world to hold game objects and systems
-    let mut world = World::default();
+    let mut engine = Engine::new();
+    register_game_types(&mut engine);
+    let mut world = engine.create_world();
 
-    // Spawn the objects (managed via its Script implementation)
-    world.spawn(Box::new(TilemapTester::new()));
-    world.spawn(Box::new(tester1::RotatingSprite1::new()));
-    world.spawn(Box::new(ColliderDemoBox::new()));
-    world.spawn(Box::new(player::Player::new()));
+    let _ = world.spawn_archetype::<tilemap_tester::TilemapTesterArchetype>();
+    let _ = world.spawn_archetype::<tester1::RotatingSpriteArchetype>();
+    let _ = world.spawn_archetype::<collider_demo::ColliderDemoBoxArchetype>();
+    let _ = world.spawn_archetype::<player::PlayerArchetype>();
 
-    // Configure the application window
     let config = RunaWindowConfig {
         title: "Runa Sandbox".to_string(),
         width: 1280,
@@ -32,6 +37,5 @@ fn main() {
         window_icon: None,
     };
 
-    // Launch the engine with the configured world and window settings
     let _ = RunaApp::run_with_config(world, config);
 }

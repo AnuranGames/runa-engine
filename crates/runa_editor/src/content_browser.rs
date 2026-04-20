@@ -1115,8 +1115,22 @@ fn target_directory(path: &Path) -> PathBuf {
 }
 
 fn object_script_template(type_name: &str) -> String {
+    let type_name_snake = type_name
+        .chars()
+        .enumerate()
+        .flat_map(|(index, ch)| {
+            let mut chars = Vec::new();
+            if ch.is_uppercase() && index > 0 {
+                chars.push('_');
+            }
+            chars.extend(ch.to_lowercase());
+            chars
+        })
+        .collect::<String>();
+
     format!(
-        "use runa_engine::{{\n    runa_core::{{\n        components::{{SpriteRenderer, Transform}},\n        ocs::{{Object, Script}},\n        Vec3,\n    }},\n}};\n\npub struct {type_name} {{\n    speed: f32,\n    direction: Vec3,\n}}\n\nimpl {type_name} {{\n    pub fn new() -> Self {{\n        Self {{\n            speed: 1.0,\n            direction: Vec3::ZERO,\n        }}\n    }}\n}}\n\nimpl Script for {type_name} {{\n    fn construct(&self, object: &mut Object) {{\n        object\n            .add_component(Transform::default())\n            .add_component(SpriteRenderer::default());\n    }}\n\n    fn update(&mut self, object: &mut Object, dt: f32) {{\n        let _ = (&self.speed, &self.direction, object, dt);\n    }}\n}}\n"
+        "use runa_engine::{{\n    runa_core::{{\n        components::Transform,\n        ocs::{{Object, Script, ScriptContext}},\n        Vec3,\n    }},\n}};\n\npub struct {type_name} {{\n    speed: f32,\n    direction: Vec3,\n}}\n\nimpl {type_name} {{\n    pub fn new() -> Self {{\n        Self {{\n            speed: 1.0,\n            direction: Vec3::ZERO,\n        }}\n    }}\n}}\n\nimpl Script for {type_name} {{\n    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {{\n        let _ = (&self.speed, &self.direction, dt);\n\n        if let Some(transform) = ctx.get_component_mut::<Transform>() {{\n            let _ = transform;\n        }}\n    }}\n}}\n\npub fn create_{type_name_snake}() -> Object {{\n    Object::new(\"{type_name}\")\n        .with({type_name}::new())\n}}\n",
+        type_name_snake = type_name_snake,
     )
 }
 

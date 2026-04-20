@@ -1,138 +1,106 @@
 # Runa Engine Tutorials
 
-Welcome to the Runa Engine tutorials! These guides will help you learn how to build games with Runa Engine.
+These guides assume the current runtime model:
+
+- `Object` is a component container with identity
+- `Transform` exists by default
+- scripts are behavior attachments
+- world mutations from scripts use deferred commands
+- code-first bootstrap stays first-class
+- registration and archetypes are runtime-owned, not editor-owned
 
 ## Getting Started
 
-New to Runa Engine? Start here:
+1. [Creating Your First App](getting-started/creating-your-first-app.md)
+2. [Creating a 2D Game](getting-started/creating-a-2d-game.md)
+3. [Creating a 3D Game](getting-started/creating-a-3d-game.md)
+4. [Creating Scripts](scripts/creating-scripts.md)
+5. [Registration And Archetypes](advanced/registration-and-archetypes.md)
 
-### Quick Start Guides
+## Core Concepts
 
-1. [Creating a 2D Game](getting-started/creating-a-2d-game.md) - Complete guide for 2D games with player movement and mouse interaction
-2. [Creating a 3D Game](getting-started/creating-a-3d-game.md) - Complete guide for 3D games with FPS camera and mesh rendering
-3. [Creating Your First App](getting-started/creating-your-first-app.md) - Minimal application setup
-4. [Creating Scripts](scripts/creating-scripts.md) - Add behavior to game objects
-5. [Input System](systems/input.md) - Handle keyboard, mouse, and window control
+- [Scripts](scripts/creating-scripts.md)
+- [Transform](components/transform.md)
+- [Input](systems/input.md)
+- [Object Model Notes](../architecture/object-model.md)
+- [Registration And Archetypes](advanced/registration-and-archetypes.md)
 
-## Choosing Your Path
+## Components and Systems
 
-### 2D Game Development
+- [SpriteRenderer](components/sprite-renderer.md)
+- [CursorInteractable](components/cursor-interactable.md)
+- [Collider2D / PhysicsCollision](components/physics-collision.md)
+- [Audio](systems/audio.md)
+- [Tilemap](tilemap/tilemap.md)
 
-If you're making a 2D game (platformer, top-down, puzzle):
-
-1. Start with [Creating a 2D Game](getting-started/creating-a-2d-game.md)
-2. Learn about [Tilemaps](tilemap/tilemap.md) for level design
-3. Add interactivity with [CursorInteractable](components/cursor-interactable.md)
-
-### 3D Game Development
-
-If you're making a 3D game (FPS, third-person, exploration):
-
-1. Start with [Creating a 3D Game](getting-started/creating-a-3d-game.md)
-2. Learn about the [Camera system](#camera) for different perspectives
-3. Create custom meshes with vertices and indices
-
-## Tutorials by Category
-
-### Core Concepts
-
-Fundamental building blocks:
-
-- [Transform](components/transform.md) - Position, rotation, and scale
-- [Scripts](scripts/creating-scripts.md) - Add behavior with the Script trait
-- [Input](systems/input.md) - Keyboard, mouse, and cursor control
-
-### Components
-
-Components add properties and features to game objects:
-
-#### Rendering
-
-- [SpriteRenderer](components/sprite-renderer.md) - Display 2D images
-- [MeshRenderer](components/mesh-renderer.md) - Display 3D meshes
-- [TilemapRenderer](tilemap/tilemap.md) - Tile-based 2D levels
-
-#### Camera
-
-- [Camera](getting-started/creating-a-2d-game.md#understanding-the-camera) - Unified 2D/3D camera system
-  - `Camera::new_ortho()` - For 2D games
-  - `Camera::new_perspective()` - For 3D games
-- [ActiveCamera](getting-started/creating-a-3d-game.md) - Mark the active camera
-
-#### Interaction
-
-- [CursorInteractable](components/cursor-interactable.md) - Mouse hover and click events
-
-#### Collision
-
-- [Collider2D](components/physics-collision.md) - Simple AABB overlap detection
-- [PhysicsCollision](components/physics-collision.md) - Existing collision-sized component used by current editor/runtime paths
-
-### Systems
-
-Core engine systems:
-
-- [Input](systems/input.md) - Keyboard, mouse, cursor, and window control
-- [Audio](systems/audio.md) - Sound effects and music
-- [Rendering](../architecture/renderer.md) - How rendering works
-
-### Tilemaps
-
-Create 2D levels:
-
-- [Tilemap](tilemap/tilemap.md) - Complete tilemap guide
-
-## Example Code
-
-All examples assume you have the following imports:
+## Shared Pattern
 
 ```rust
-use runa_engine::runa_core::{
-    components::*,
-    input_system::*,
-    ocs::{Object, Script, World},
-    glam::{Vec2, Vec3, Quat},
+use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    Engine, RunaArchetype,
 };
+use runa_engine::runa_core::{
+    ocs::{Object, Script, ScriptContext, World},
+    components::SpriteRenderer,
+};
+
+struct MyBehavior;
+
+impl Script for MyBehavior {
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        let _ = (ctx, dt);
+    }
+}
+
+#[derive(RunaArchetype)]
+#[runa(name = "player")]
+struct PlayerArchetype;
+
+impl PlayerArchetype {
+    fn create(world: &mut World) -> u64 {
+        world.spawn(
+            Object::new("Player")
+                .with(SpriteRenderer::default())
+                .with(MyBehavior)
+        )
+    }
+}
+
+fn register_game_types(engine: &mut Engine) {
+    engine.register_script::<MyBehavior>();
+    engine.register_archetype::<PlayerArchetype>();
+}
+
+fn main() {
+    let mut engine = Engine::new();
+    register_game_types(&mut engine);
+
+    let mut world = engine.create_world();
+    let _ = world.spawn_archetype::<PlayerArchetype>();
+
+    let _ = RunaApp::run_with_config(
+        world,
+        RunaWindowConfig {
+            title: "Tutorial".to_string(),
+            width: 1280,
+            height: 720,
+            fullscreen: false,
+            vsync: true,
+            show_fps_in_title: true,
+            window_icon: None,
+        },
+    );
+}
 ```
 
-## Camera System
+## Why The Tutorials Use This Style
 
-Runa Engine uses a unified `Camera` component for both 2D and 3D:
+This style keeps:
 
-### 2D Orthographic Camera
+- composition explicit
+- bootstrap explicit
+- behavior local to scripts
+- editor dependency out of runtime code
 
-```rust
-object.add_component(Camera::new_ortho(
-    32.0,        // width in world units
-    18.0,        // height in world units
-    (1280, 720)  // viewport size in pixels
-));
-```
-
-### 3D Perspective Camera
-
-```rust
-object.add_component(Camera::new_perspective(
-    position,           // Vec3 camera position
-    target,             // Vec3 look-at point
-    Vec3::Y,            // Up vector
-    75.0.to_radians(), // Field of view
-    0.1,                // Near clipping plane
-    1000.0,             // Far clipping plane
-    (1280, 720)         // Viewport size
-));
-```
-
-## Getting Help
-
-- Check the [architecture](../architecture/) documentation for deeper understanding
-- Look at the [examples](../../examples/) folder for complete working projects
-- Review the API documentation for detailed reference
-
-## Next Steps
-
-After completing these tutorials:
-
-1. Experiment with the example projects (`sandbox`, `sandbox_3d`)
-2. Combine components to create complex behaviors
-3. Expect API changes while the engine is still pre-alpha
+It also gives Runa a future path for editor tools, archetype browsers, and serialization without moving the source of truth away from the runtime object model.

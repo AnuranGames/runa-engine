@@ -1,66 +1,52 @@
 # Transform Component
 
-The `Transform` component defines an object's position, rotation, and scale in the game world.
+`Transform` stores an object's position, rotation, and scale.
 
-## Adding Transform to an Object
+In the current runtime model:
+
+- `Transform` is a normal component
+- `Object::new(...)` auto-adds it
+- every object is guaranteed to have one
+
+That means the common case is:
 
 ```rust
-use runa_core::components::Transform;
-
-object.add_component(Transform::default());
+let object = Object::new("Mover");
 ```
 
-This creates a transform with:
-
-- Position: `(0, 0, 0)`
-- Rotation: No rotation
-- Scale: `(1, 1, 1)`
-
-## Setting Position
+You only add `Transform` explicitly when you want non-default initial values:
 
 ```rust
-use runa_core::glam::Vec3;
+use runa_engine::runa_core::{Quat, Vec3};
+use runa_engine::runa_core::components::Transform;
 
-if let Some(transform) = object.get_component_mut::<Transform>() {
-    // Set absolute position
+let object = Object::new("Mover").with(Transform {
+    position: Vec3::new(4.0, 2.0, 0.0),
+    rotation: Quat::IDENTITY,
+    scale: Vec3::splat(2.0),
+    previous_position: Vec3::new(4.0, 2.0, 0.0),
+    previous_rotation: Quat::IDENTITY,
+});
+```
+
+## Common Usage
+
+```rust
+use runa_engine::runa_core::glam::Vec3;
+
+if let Some(transform) = ctx.get_component_mut::<Transform>() {
     transform.position = Vec3::new(1.0, 2.0, 0.0);
-
-    // Move relative to current position
-    transform.position.x += 0.5;
-    transform.position.y += 0.5;
+    transform.scale = Vec3::new(2.0, 2.0, 1.0);
+    transform.rotate_z(45.0);
 }
 ```
 
-## Rotation
+## Behavior Example
 
 ```rust
-if let Some(transform) = object.get_component_mut::<Transform>() {
-    // Rotate around Z axis (2D rotation)
-    transform.rotate_z(45.0); // 45 degrees
-
-    // Rotate around X or Y axis (3D)
-    transform.rotate_x(30.0);
-    transform.rotate_y(60.0);
-}
-```
-
-## Scale
-
-```rust
-if let Some(transform) = object.get_component_mut::<Transform>() {
-    // Set scale
-    transform.scale = Vec3::new(2.0, 2.0, 1.0); // 2x larger
-}
-```
-
-## Complete Example: Moving Object
-
-```rust
-use runa_core::{
+use runa_engine::runa_core::{
     components::Transform,
-    ocs::{Object, Script},
-    World,
-    glam::Vec3,
+    ocs::{Object, Script, ScriptContext},
 };
 
 pub struct Mover {
@@ -74,35 +60,21 @@ impl Mover {
 }
 
 impl Script for Mover {
-    fn construct(&self, object: &mut Object) {
-        object.add_component(Transform::default());
-    }
-
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            // Move right at constant speed
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
             transform.position.x += self.speed * dt;
         }
     }
 }
+
+fn create_mover() -> Object {
+    Object::new("Mover").with(Mover::new())
+}
 ```
 
-## Properties
+## Notes
 
-| Property   | Type   | Description                          |
-| ---------- | ------ | ------------------------------------ |
-| `position` | `Vec3` | World position (x, y, z)             |
-| `rotation` | `Quat` | Rotation as quaternion               |
-| `scale`    | `Vec3` | Scale factor (1, 1, 1 = normal size) |
-
-## Tips
-
-- Use `dt` (delta time) for frame-rate independent movement
-- For 2D games, use Z rotation and keep Z position at 0
-- Scale values less than 1.0 make objects smaller
-
-## Next Steps
-
-- [SpriteRenderer](sprite-renderer.md) to display images
-- [Input](../systems/input.md) for player movement
-- [Tilemap](tilemap.md) for level design
+- `Transform` cannot be removed from an object
+- use `dt` for frame-rate independent movement
+- for 2D games, keep Z near zero and rotate around Z
+- `Transform` is data; movement logic belongs in scripts or systems

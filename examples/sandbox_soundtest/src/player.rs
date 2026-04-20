@@ -1,9 +1,11 @@
-use glam::Vec3;
+use runa_asset::load_image;
 use runa_core::{
-    components::{SpriteRenderer, Transform},
+    components::{ActiveCamera, AudioListener, Camera, SpriteRenderer, Transform},
+    glam::Vec3,
     input_system::*,
-    ocs::Script,
+    ocs::{Object, Script, ScriptContext, World},
 };
+use runa_engine::RunaArchetype;
 
 pub struct Player {
     speed: f32,
@@ -20,50 +22,52 @@ impl Player {
 }
 
 impl Script for Player {
-    fn construct(&self, _object: &mut runa_core::ocs::Object) {
-        // Object construction
-        _object
-            .add_component(Transform::default())
-            .add_component(SpriteRenderer {
-                texture: Some(runa_asset::loader::load_image("assets/Charactert.png")), // Load the sprite
-                texture_path: Some("assets/Charactert.png".to_string()),
-            });
-    }
-
-    fn start(&mut self, _object: &mut runa_core::ocs::Object) {
-        if let Some(transform) = _object.get_component_mut::<Transform>() {
-            // Initial player position
-            transform.position = Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            };
-            transform.scale = Vec3 {
-                x: 1.0,
-                y: 1.0,
-                z: 1.0,
-            };
+    fn start(&mut self, ctx: &mut ScriptContext) {
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
+            transform.position = Vec3::new(0.0, 0.0, 0.0);
+            transform.scale = Vec3::new(1.0, 1.0, 1.0);
         }
     }
 
-    fn update(&mut self, _object: &mut runa_core::ocs::Object, _dt: f32) {
-        if let Some(transform) = _object.get_component_mut::<Transform>() {
-            self.direction = Vec3::ZERO;
-            // Handle player keyboard input.
-            if Input::is_key_pressed(KeyCode::KeyW) {
-                self.direction.y = 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyS) {
-                self.direction.y = -1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyD) {
-                self.direction.x = 1.0;
-            }
-            if Input::is_key_pressed(KeyCode::KeyA) {
-                self.direction.x = -1.0;
-            }
-            // Update on every simulation tick, independent from frame rate
+    fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+        self.direction = Vec3::ZERO;
+        if Input::is_key_pressed(KeyCode::KeyW) {
+            self.direction.y = 1.0;
+        }
+        if Input::is_key_pressed(KeyCode::KeyS) {
+            self.direction.y = -1.0;
+        }
+        if Input::is_key_pressed(KeyCode::KeyD) {
+            self.direction.x = 1.0;
+        }
+        if Input::is_key_pressed(KeyCode::KeyA) {
+            self.direction.x = -1.0;
+        }
+
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
             transform.position += self.direction.normalize_or_zero() * self.speed;
         }
+    }
+}
+
+pub fn create_player() -> Object {
+    Object::new("Player")
+        .with(AudioListener::new())
+        .with(Camera::new_ortho(320.0, 180.0, (1280, 720)))
+        .with(ActiveCamera)
+        .with(SpriteRenderer {
+            texture: Some(load_image!("assets/art/Charactert.png")),
+            texture_path: Some("assets/Charactert.png".to_string()),
+        })
+        .with(Player::new())
+}
+
+#[derive(RunaArchetype)]
+#[runa(name = "player")]
+pub struct PlayerArchetype;
+
+impl PlayerArchetype {
+    pub fn create(world: &mut World) -> u64 {
+        world.spawn(create_player())
     }
 }

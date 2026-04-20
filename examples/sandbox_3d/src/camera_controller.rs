@@ -3,21 +3,15 @@ use runa_core::glam::Vec3;
 use runa_core::input_system;
 use runa_core::input_system::get_mouse_delta;
 use runa_core::input_system::{Input, KeyCode, MouseButton};
-use runa_core::ocs::{Object, Script};
+use runa_core::ocs::{Object, Script, ScriptContext, World};
+use runa_engine::RunaArchetype;
 
 static mut CURSOR_LOCKED: bool = false;
 
-/// First-person camera controller for 3D navigation
-///
-/// Controls:
-/// - WASD: Move horizontally
-/// - Space: Move up
-/// - Ctrl: Move down
-/// - Mouse: Look around (right-click to enable)
 pub struct CameraController {
     position: Vec3,
-    yaw: f32,   // Horizontal rotation (radians)
-    pitch: f32, // Vertical rotation (radians)
+    yaw: f32,
+    pitch: f32,
     speed: f32,
     sensitivity: f32,
 }
@@ -25,11 +19,11 @@ pub struct CameraController {
 impl CameraController {
     pub fn new() -> Self {
         Self {
-            position: Vec3::new(0.0, 0.0, 5.0), // Start 5 units back
+            position: Vec3::new(0.0, 0.0, 5.0),
             yaw: 0.0,
             pitch: 0.0,
             speed: 3.0,
-            sensitivity: 0.01,
+            sensitivity: 0.001,
         }
     }
 
@@ -48,23 +42,7 @@ impl CameraController {
 }
 
 impl Script for CameraController {
-    fn construct(&self, object: &mut Object) {
-        object.add_component(Camera::new_perspective(
-            self.position,
-            self.position + Vec3::Z,
-            Vec3::Y,
-            75.0_f32.to_radians(),
-            0.1,
-            1000.0,
-            (1280, 720),
-        ));
-
-        // Mark this object as the active camera
-        object.add_component(ActiveCamera);
-    }
-
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        // Toggle cursor lock on right-click press
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         if Input::is_mouse_button_just_pressed(MouseButton::Right) {
             unsafe {
                 CURSOR_LOCKED = !CURSOR_LOCKED;
@@ -73,25 +51,19 @@ impl Script for CameraController {
             }
         }
 
-        // Mouse look (when cursor is locked)
         unsafe {
             if CURSOR_LOCKED {
                 let mouse_delta = get_mouse_delta();
                 self.yaw -= mouse_delta.0 * self.sensitivity;
-                self.pitch -= mouse_delta.1 * self.sensitivity; // Inverted Y for FPS-style
-
-                // Clamp pitch to avoid flipping
+                self.pitch -= mouse_delta.1 * self.sensitivity;
                 self.pitch = self.pitch.clamp(-1.5, 1.5);
             }
         }
 
-        // Calculate movement direction
         let forward = self.get_forward();
         let right = self.get_right();
-
         let mut movement = Vec3::ZERO;
 
-        // WASD movement
         if Input::is_key_pressed(KeyCode::KeyW) {
             movement += forward;
         }
@@ -104,8 +76,6 @@ impl Script for CameraController {
         if Input::is_key_pressed(KeyCode::KeyA) {
             movement -= right;
         }
-
-        // Vertical movement
         if Input::is_key_pressed(KeyCode::Space) {
             movement += Vec3::Y;
         }
@@ -115,12 +85,10 @@ impl Script for CameraController {
             movement -= Vec3::Y;
         }
 
-        // Apply movement
         if movement.length() > 0.0 {
             self.position += movement.normalize() * self.speed * dt;
         }
 
-        // Calculate target point (where camera is looking)
         let target = self.position
             + Vec3::new(
                 -self.yaw.sin() * self.pitch.cos(),
@@ -128,11 +96,35 @@ impl Script for CameraController {
                 -self.yaw.cos() * self.pitch.cos(),
             );
 
-        // Update camera component
-        if let Some(camera) = object.get_component_mut::<Camera>() {
+        if let Some(camera) = ctx.get_component_mut::<Camera>() {
             camera.position = self.position;
             camera.target = target;
             camera.up = Vec3::Y;
         }
+    }
+}
+
+pub fn create_camera_controller() -> Object {
+    Object::new("Main Camera")
+        .with(Camera::new_perspective(
+            Vec3::new(0.0, 0.0, 5.0),
+            Vec3::new(0.0, 0.0, 6.0),
+            Vec3::Y,
+            75.0_f32.to_radians(),
+            0.1,
+            1000.0,
+            (1280, 720),
+        ))
+        .with(ActiveCamera)
+        .with(CameraController::new())
+}
+
+#[derive(RunaArchetype)]
+#[runa(name = "camera_controller")]
+pub struct CameraControllerArchetype;
+
+impl CameraControllerArchetype {
+    pub fn create(world: &mut World) -> u64 {
+        world.spawn(create_camera_controller())
     }
 }

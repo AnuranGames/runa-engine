@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-alpha.1] - 2026-04-20
+
+### Added
+
+- **Typed archetype API**
+  - Added `ArchetypeKey` and `RunaArchetype`
+  - Added typed registration via `engine.register_archetype::<T>()`
+  - Added typed spawning via `world.spawn_archetype::<T>()`
+  - Added `#[derive(RunaArchetype)]` with deterministic snake_case keys
+  - Added optional `#[runa(name = \"...\")]` override for archetype names
+
+- **Automatic built-in type registration**
+  - `Engine::new()` now registers built-in runtime components automatically
+  - Added registry metadata source tracking for built-in vs user registrations
+  - Added generic user-type registration via `engine.register::<T>()` for derived components and scripts
+
+- **Runtime registry metadata**
+  - Added built-in/user origin metadata for registered components, scripts, and archetypes
+  - Exposed queries for built-in and user type sets to support tooling and editor work
+
+- **Documentation and examples refresh**
+  - Updated README and tutorials to use the typed archetype flow
+  - Updated bundled examples to remove string-based archetype usage from gameplay code
+  - Added tests covering typed archetypes and automatic built-in registration
+
+### Changed
+
+- **Breaking:** Archetype registration is now type-driven in normal gameplay code
+  - `engine.register_archetype_named(...)` is no longer the primary API
+  - `world.spawn_archetype_by_name(...)` remains as a secondary path for tooling, serialization, and editor integration
+
+- **Breaking:** Engine built-in components no longer require user registration
+  - User bootstrap code should register only game-specific components, scripts, and archetypes
+
+- **Runtime architecture**
+  - Continued the object-first OCS/runtime cleanup around `World`, `Object`, `ScriptContext`, deferred commands, and runtime-owned registry metadata
+  - Kept editor/tooling-oriented string lookup as an internal/secondary mechanism instead of a gameplay-facing default
+
+### Fixed
+
+- Reduced fragile setup around engine bootstrap by removing required manual registration of core engine components
+- Removed string-only archetype entry points from bundled gameplay examples
+- Brought primary docs in line with the typed archetype and explicit registration model
+
 ## [0.2.0-alpha.2] - 2026-03-27
 
 ### Added

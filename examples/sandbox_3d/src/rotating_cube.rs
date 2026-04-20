@@ -1,8 +1,8 @@
 use runa_core::components::{Mesh, MeshRenderer, Transform};
 use runa_core::glam::{Quat, Vec3};
-use runa_core::ocs::{Object, Script};
+use runa_core::ocs::{Object, Script, ScriptContext, World};
+use runa_engine::RunaArchetype;
 
-/// Simple 3D cube to verify mesh rendering works
 pub struct RotatingCube {
     rotation_speed: f32,
 }
@@ -10,32 +10,39 @@ pub struct RotatingCube {
 impl RotatingCube {
     pub fn new() -> Self {
         Self {
-            rotation_speed: 0.5, // radians per second
+            rotation_speed: 0.5,
         }
     }
 }
 
 impl Script for RotatingCube {
-    fn construct(&self, object: &mut Object) {
-        // Add transform - position 3 units in front of camera
-        object.add_component(Transform {
-            position: Vec3::new(0., 0., 0.), // 2 units in front of camera at (0,0,5)
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
+            let rotation = Quat::from_rotation_y(self.rotation_speed * dt);
+            transform.rotation *= rotation;
+        }
+    }
+}
+
+pub fn create_rotating_cube() -> Object {
+    Object::new("Rotating Cube")
+        .with(Transform {
+            position: Vec3::new(0.0, 0.0, 0.0),
             rotation: Quat::IDENTITY,
-            scale: Vec3::new(1., 1., 1.),
+            scale: Vec3::new(1.0, 1.0, 1.0),
             previous_position: Vec3::ZERO,
             previous_rotation: Quat::IDENTITY,
-        });
+        })
+        .with(MeshRenderer::new(Mesh::cube(1.0)))
+        .with(RotatingCube::new())
+}
 
-        // Add 3D mesh (cube)
-        let mesh = Mesh::cube(1.);
-        object.add_component(MeshRenderer::new(mesh));
-    }
+#[derive(RunaArchetype)]
+#[runa(name = "rotating_cube")]
+pub struct RotatingCubeArchetype;
 
-    fn update(&mut self, object: &mut Object, dt: f32) {
-        if let Some(transform) = object.get_component_mut::<Transform>() {
-            // Rotate around Y axis
-            let rotation = Quat::from_rotation_y(self.rotation_speed * dt);
-            transform.rotation = transform.rotation * rotation;
-        }
+impl RotatingCubeArchetype {
+    pub fn create(world: &mut World) -> u64 {
+        world.spawn(create_rotating_cube())
     }
 }

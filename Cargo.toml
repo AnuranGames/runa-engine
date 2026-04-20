@@ -1,6 +1,7 @@
 [workspace]
 exclude = ["templates"]
 members = [
+    "crates/runa_macros",
     "crates/runa_engine",
     "crates/runa_app",
     "crates/runa_core",
@@ -17,11 +18,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0-alpha.2"
+version = "0.3.0-alpha.1"
 authors = ["Nik Neza <star.off.nik@gmail.com>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Runa-Engine/runa"
+repository = "https://github.com/RunaGameEngine/runa"
 description = "2D/3D game engine in Rust"
 
 [workspace.dependencies]

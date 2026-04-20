@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+runa_macros = { path = "../runa_macros" }
 runa_app = { path = "../runa_app" }
 runa_core = { path = "../runa_core" }
 runa_asset = { path = "../runa_asset" }
