@@ -4,6 +4,10 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE-APACHE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://www.rust-lang.org)
 
+<div align="center">
+  <img src="TheRunaGameEngine.png" alt="https://github.com/RunaGameEngine/runa">
+</div>
+
 Runa Engine is an experimental Rust game engine workspace built around a code-first runtime, a `wgpu` renderer, project tooling, and an optional editor.
 
 > Status: pre-alpha. APIs are still evolving. The runtime is usable for prototypes and internal tools, but the engine is not production-ready yet.
