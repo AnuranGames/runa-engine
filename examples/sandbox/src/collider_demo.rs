@@ -14,6 +14,7 @@ pub fn create_collider_demo_box() -> Object {
         .with(SpriteRenderer {
             texture: Some(runa_asset::load_image!("assets/art/Tester2.png")),
             texture_path: Some("assets/art/Tester2.png".to_string()),
+            pixels_per_unit: 16.0,
         })
         .with(Collider2D::new(16.0, 16.0))
 }

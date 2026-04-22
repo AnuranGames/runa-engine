@@ -6,6 +6,7 @@ use runa_core::components::{
     ActiveCamera, AudioSource, Camera, Mesh, MeshRenderer, ObjectDefinitionInstance,
     PhysicsCollision, ProjectionType, SerializedField, SerializedTypeEntry, SerializedTypeKind,
     SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform,
+    DEFAULT_SPRITE_PIXELS_PER_UNIT,
 };
 use runa_core::glam::{IVec2, Quat, USizeVec2, Vec2, Vec3};
 use runa_core::ocs::Object;
@@ -107,6 +108,12 @@ pub struct MeshRendererAsset {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpriteRendererAsset {
     pub sprite: Option<String>,
+    #[serde(default = "default_sprite_pixels_per_unit")]
+    pub pixels_per_unit: f32,
+}
+
+fn default_sprite_pixels_per_unit() -> f32 {
+    DEFAULT_SPRITE_PIXELS_PER_UNIT
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -595,11 +602,13 @@ impl SpriteRendererAsset {
     fn from_component(component: &SpriteRenderer) -> Self {
         Self {
             sprite: component.texture_path.clone(),
+            pixels_per_unit: component.pixels_per_unit,
         }
     }
 
     fn into_component(self, project_root: Option<&Path>) -> SpriteRenderer {
         let mut sprite = SpriteRenderer::default();
+        sprite.pixels_per_unit = self.pixels_per_unit.max(f32::EPSILON);
         if let Some(path) = self.sprite {
             if let Some(project_root) = project_root {
                 if let Some(handle) = load_texture_handle(project_root, &path) {

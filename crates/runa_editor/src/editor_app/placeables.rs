@@ -264,7 +264,10 @@ fn sprite_object_asset() -> WorldObjectAsset {
         object_id: None,
         transform: TransformAsset::default(),
         mesh_renderer: None,
-        sprite_renderer: Some(SpriteRendererAsset { sprite: None }),
+        sprite_renderer: Some(SpriteRendererAsset {
+            sprite: None,
+            pixels_per_unit: 16.0,
+        }),
         tilemap: None,
         camera: None,
         active_camera: false,

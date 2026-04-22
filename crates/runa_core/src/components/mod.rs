@@ -30,7 +30,7 @@ pub use mesh_renderer::MeshRenderer;
 pub use object_definition_instance::ObjectDefinitionInstance;
 pub use physics_collision::PhysicsCollision;
 pub use serialized_type_storage::{SerializedTypeEntry, SerializedTypeKind, SerializedTypeStorage};
-pub use sprite_renderer::SpriteRenderer;
+pub use sprite_renderer::{SpriteRenderer, DEFAULT_SPRITE_PIXELS_PER_UNIT};
 pub use tilemap::Rect;
 pub use tilemap::Tile;
 pub use tilemap::Tilemap;

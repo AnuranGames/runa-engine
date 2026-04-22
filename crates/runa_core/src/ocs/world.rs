@@ -270,7 +270,7 @@ impl World {
                     Arc::from(texture),
                     transform.interpolated_position(interpolation_factor),
                     transform.interpolated_rotation(interpolation_factor),
-                    transform.scale,
+                    Vec3::new(transform.scale.x, transform.scale.y, sprite.pixels_per_unit()),
                 );
             }
 

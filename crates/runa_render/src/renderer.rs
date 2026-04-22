@@ -487,8 +487,9 @@ impl<'window> Renderer<'window> {
                 } => {
                     let tex_width = texture.width as f32;
                     let tex_height = texture.height as f32;
-                    let world_scale_x = scale.x * (tex_width / 16.0);
-                    let world_scale_y = scale.y * (tex_height / 16.0);
+                    let pixels_per_unit = scale.z.max(f32::EPSILON);
+                    let world_scale_x = scale.x * (tex_width / pixels_per_unit);
+                    let world_scale_y = scale.y * (tex_height / pixels_per_unit);
 
                     let instance = InstanceData {
                         position: [position.x, position.y, position.z],

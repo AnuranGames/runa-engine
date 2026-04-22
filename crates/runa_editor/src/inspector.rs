@@ -295,6 +295,15 @@ fn components_section(
                         "none"
                     });
                 });
+                property_row(ui, "Pixels Per Unit", |ui| {
+                    let response = ui.add_sized(
+                        [96.0, 22.0],
+                        egui::DragValue::new(&mut sprite.pixels_per_unit).speed(0.25),
+                    );
+                    if response.changed() {
+                        sprite.pixels_per_unit = sprite.pixels_per_unit.max(f32::EPSILON);
+                    }
+                });
                 if let Some(error) = error_message {
                     ui.colored_label(style::ERROR_COLOR, error);
                 }

@@ -61,6 +61,7 @@ pub fn create_player() -> Object {
         .with(SpriteRenderer {
             texture: Some(load_image!("assets/art/Charactert.png")),
             texture_path: Some("assets/Charactert.png".to_string()),
+            pixels_per_unit: 16.0,
         })
         .with(Player::new())
 }

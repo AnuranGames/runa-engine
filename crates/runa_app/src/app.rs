@@ -73,16 +73,9 @@ impl<'window> App<'window> {
         let transform = object.get_component::<runa_core::components::Transform>();
 
         if let Some(transform) = transform {
-            let interpolated_position = glam::Vec3::lerp(
-                transform.previous_position,
-                transform.position,
-                interpolation_factor,
-            );
-            let interpolated_rotation = transform.previous_rotation
-                + (transform.rotation - transform.previous_rotation) * interpolation_factor;
             let interpolated_transform = runa_core::components::Transform {
-                position: interpolated_position,
-                rotation: interpolated_rotation,
+                position: transform.interpolated_position(interpolation_factor),
+                rotation: transform.interpolated_rotation(interpolation_factor),
                 scale: transform.scale,
                 previous_position: transform.previous_position,
                 previous_rotation: transform.previous_rotation,
@@ -137,12 +130,12 @@ impl<'window> App<'window> {
             self.world.render(&mut self.queue, interpolation_factor);
 
             // Render console on top (after clearing queue and world render)
-            self.console.render(&mut self.queue, &self.camera);
+            self.console.render(&mut self.queue, &active_camera);
 
-            // Rendering - use 3D matrix if available, otherwise use 2D camera matrix
-            let camera_matrix = self
-                .camera_matrix_override
-                .unwrap_or_else(|| active_camera.matrix());
+            // Always render through the camera resolved for this exact frame.
+            // Using the last fixed-step camera matrix here causes visible jitter
+            // when the active camera follows an interpolated target.
+            let camera_matrix = active_camera.matrix();
 
             let virtual_size = if matches!(
                 active_camera.projection,
@@ -158,6 +151,7 @@ impl<'window> App<'window> {
 
             // Get ortho_size from active camera if available, otherwise use default camera
             renderer.draw(&self.queue, camera_matrix, virtual_size);
+
 
             // Update FPS
             self.frame_count += 1;

@@ -28,7 +28,7 @@ pub struct PlayerController {
 impl PlayerController {
     pub fn new() -> Self {
         Self {
-            speed: 15.0,
+            speed: 16.0,
             direction: Vec3::ZERO,
         }
     }
@@ -66,6 +66,8 @@ impl Script for PlayerController {
         else {
             return;
         };
+
+        println!("Player: {}", current_position); 
 
         let movement = self.direction.normalize_or_zero() * self.speed * _dt;
         let next_position = current_position + movement;
@@ -110,6 +112,9 @@ impl Script for PlayerCameraFollow {
         // Hard follow keeps the player and camera on the same fixed-step path.
         // This avoids the visible screen-space jitter that appears when the
         // camera smooths toward a target while the target itself is interpolated.
+
+        println!("Camera: {}", transform.position); 
+        
         transform.position = Vec3::new(player_position.x, player_position.y, self.lock_z);
     }
 }
@@ -127,7 +132,7 @@ pub fn create_player_camera() -> Object {
         .with(Camera::new_ortho(32.0, 18.0))
         .with(ActiveCamera)
         .with(Canvas::new(CanvasSpace::Camera))
-        // .with(PlayerCameraFollow::new())
+        .with(PlayerCameraFollow::new())
 }
 
 #[derive(RunaArchetype)]
