@@ -67,8 +67,6 @@ impl Script for PlayerController {
             return;
         };
 
-        println!("Player: {}", current_position); 
-
         let movement = self.direction.normalize_or_zero() * self.speed * _dt;
         let next_position = current_position + movement;
 
@@ -112,8 +110,6 @@ impl Script for PlayerCameraFollow {
         // Hard follow keeps the player and camera on the same fixed-step path.
         // This avoids the visible screen-space jitter that appears when the
         // camera smooths toward a target while the target itself is interpolated.
-
-        println!("Camera: {}", transform.position); 
         
         transform.position = Vec3::new(player_position.x, player_position.y, self.lock_z);
     }
@@ -129,6 +125,8 @@ pub fn create_player() -> Object {
 
 pub fn create_player_camera() -> Object {
     Object::new("Player Camera")
+        // A wider ortho view keeps sandbox movement readable while still making
+        // camera-follow interpolation problems obvious during debugging.
         .with(Camera::new_ortho(32.0, 18.0))
         .with(ActiveCamera)
         .with(Canvas::new(CanvasSpace::Camera))

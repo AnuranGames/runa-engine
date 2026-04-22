@@ -27,6 +27,7 @@ This document summarizes the larger runtime/editor changes that landed after `0.
   - public fields
   - `#[serialize_field]` on private fields
 - Editor/project flows can store serialized script/component state even when the editor process does not own the concrete runtime type directly
+- `SpriteRenderer` now carries `pixels_per_unit`, and the value is serialized through project/world assets
 
 ## Editor
 

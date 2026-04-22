@@ -73,6 +73,9 @@ impl<'window> App<'window> {
         let transform = object.get_component::<runa_core::components::Transform>();
 
         if let Some(transform) = transform {
+            // Camera-follow jitter is very noticeable, so the active camera
+            // must be resolved from the same interpolated transform state that
+            // the visible object render path uses for this frame.
             let interpolated_transform = runa_core::components::Transform {
                 position: transform.interpolated_position(interpolation_factor),
                 rotation: transform.interpolated_rotation(interpolation_factor),

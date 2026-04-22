@@ -270,6 +270,8 @@ impl World {
                     Arc::from(texture),
                     transform.interpolated_position(interpolation_factor),
                     transform.interpolated_rotation(interpolation_factor),
+                    // Reuse the third scale channel to carry sprite PPU into the
+                    // renderer without changing the public render command shape.
                     Vec3::new(transform.scale.x, transform.scale.y, sprite.pixels_per_unit()),
                 );
             }

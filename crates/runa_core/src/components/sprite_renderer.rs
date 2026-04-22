@@ -6,6 +6,8 @@ pub const DEFAULT_SPRITE_PIXELS_PER_UNIT: f32 = 16.0;
 pub struct SpriteRenderer {
     pub texture: Option<Handle<TextureAsset>>,
     pub texture_path: Option<String>,
+    // Texture size in pixels is converted into world units through this value.
+    // Example: a 16px sprite at 16 PPU occupies 1 world unit before object scale.
     pub pixels_per_unit: f32,
 }
 

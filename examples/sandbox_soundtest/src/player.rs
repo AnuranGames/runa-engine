@@ -61,6 +61,8 @@ pub fn create_player() -> Object {
         .with(SpriteRenderer {
             texture: Some(load_image!("assets/art/Charactert.png")),
             texture_path: Some("assets/Charactert.png".to_string()),
+            // Sound-test keeps the default 16 PPU sprite convention used by the
+            // bundled 2D examples.
             pixels_per_unit: 16.0,
         })
         .with(Player::new())

@@ -12,6 +12,9 @@ let object = Object::new("Sprite")
     .with(SpriteRenderer::new(Some(load_image!("assets/player.png"))));
 ```
 
+By default, `SpriteRenderer::new(...)` uses `16` pixels per world unit.
+You can override that through `pixels_per_unit` when you need a different sprite-to-world scale.
+
 ## Player Example
 
 ```rust
@@ -39,8 +42,30 @@ fn create_player() -> Object {
 }
 ```
 
+## Pixels Per Unit
+
+`pixels_per_unit` controls how texture pixel size turns into world size.
+
+- `16 px` at `16 PPU` becomes `1.0` world unit
+- `32 px` at `16 PPU` becomes `2.0` world units
+- `16 px` at `32 PPU` becomes `0.5` world units
+
+You can set it explicitly:
+
+```rust
+let object = Object::new("Sprite")
+    .with(SpriteRenderer {
+        texture: Some(load_image!("assets/player.png")),
+        texture_path: Some("assets/player.png".to_string()),
+        pixels_per_unit: 32.0,
+    });
+```
+
+The editor inspector exposes the same property, and world serialization stores it in `SpriteRendererAsset`.
+
 ## Notes
 
 - PNG is the most practical default format
 - attach `Transform` alongside `SpriteRenderer` for placement
 - keep rendering data in components and behavior in scripts
+- `pixels_per_unit` is part of runtime/editor serialization, so scene saves keep sprite scale intent intact
