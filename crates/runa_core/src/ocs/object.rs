@@ -28,6 +28,27 @@ pub struct Object {
     world_ptr: *mut World,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ObjectComponentInfo {
+    type_id: TypeId,
+    type_name: &'static str,
+    kind: crate::components::ComponentRuntimeKind,
+}
+
+impl ObjectComponentInfo {
+    pub fn type_id(self) -> TypeId {
+        self.type_id
+    }
+
+    pub fn type_name(self) -> &'static str {
+        self.type_name
+    }
+
+    pub fn kind(self) -> crate::components::ComponentRuntimeKind {
+        self.kind
+    }
+}
+
 impl Object {
     pub fn new(name: impl Into<String>) -> Self {
         let mut components: HashMap<TypeId, Box<dyn Component>> = HashMap::new();
@@ -110,6 +131,47 @@ impl Object {
         self.get_component::<T>().is_some()
     }
 
+    pub fn has_component_type_id(&self, type_id: TypeId) -> bool {
+        self.components.contains_key(&type_id)
+    }
+
+    pub fn with_component_mut_by_type_id<R>(
+        &mut self,
+        type_id: TypeId,
+        apply: impl FnOnce(&mut dyn Component) -> R,
+    ) -> Option<R> {
+        let component = self.components.get_mut(&type_id)?;
+        Some(apply(component.as_mut()))
+    }
+
+    pub fn with_component_by_type_id<R>(
+        &self,
+        type_id: TypeId,
+        apply: impl FnOnce(&dyn Component) -> R,
+    ) -> Option<R> {
+        let component = self.components.get(&type_id)?;
+        Some(apply(component.as_ref()))
+    }
+
+    pub fn remove_component_type_id(&mut self, type_id: TypeId) -> bool {
+        if type_id == TypeId::of::<Transform>() {
+            return false;
+        }
+
+        self.components.remove(&type_id).is_some()
+    }
+
+    pub fn component_infos(&self) -> Vec<ObjectComponentInfo> {
+        self.components
+            .iter()
+            .map(|(type_id, component)| ObjectComponentInfo {
+                type_id: *type_id,
+                type_name: component.runtime_type_name(),
+                kind: component.runtime_kind(),
+            })
+            .collect()
+    }
+
     pub(crate) fn run_start(&mut self) {
         let component_ids: Vec<TypeId> = self.components.keys().copied().collect();
         for type_id in component_ids {
@@ -130,6 +192,18 @@ impl Object {
             };
             let mut ctx = ScriptContext::new(self);
             component.on_update(&mut ctx, dt);
+            self.components.insert(type_id, component);
+        }
+    }
+
+    pub(crate) fn run_late_update(&mut self, dt: f32) {
+        let component_ids: Vec<TypeId> = self.components.keys().copied().collect();
+        for type_id in component_ids {
+            let Some(mut component) = self.components.remove(&type_id) else {
+                continue;
+            };
+            let mut ctx = ScriptContext::new(self);
+            component.on_late_update(&mut ctx, dt);
             self.components.insert(type_id, component);
         }
     }

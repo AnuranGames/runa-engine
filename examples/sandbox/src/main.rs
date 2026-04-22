@@ -26,6 +26,7 @@ fn main() {
     let _ = world.spawn_archetype::<tester1::RotatingSpriteArchetype>();
     let _ = world.spawn_archetype::<collider_demo::ColliderDemoBoxArchetype>();
     let _ = world.spawn_archetype::<player::PlayerArchetype>();
+    let _ = world.spawn_archetype::<player::PlayerCameraArchetype>();
 
     let config = RunaWindowConfig {
         title: "Runa Sandbox".to_string(),

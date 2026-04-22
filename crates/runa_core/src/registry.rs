@@ -45,9 +45,17 @@ impl TypeMetadata {
     }
 }
 
+type TypeObjectFactory = Arc<dyn Fn(&mut Object) -> bool + Send + Sync>;
+
+#[derive(Clone)]
+struct TypeRegistration {
+    metadata: TypeMetadata,
+    object_factory: Option<TypeObjectFactory>,
+}
+
 #[derive(Default, Clone)]
 pub struct TypeRegistry {
-    types_by_id: HashMap<TypeId, TypeMetadata>,
+    types_by_id: HashMap<TypeId, TypeRegistration>,
     types_by_name: HashMap<&'static str, TypeId>,
 }
 
@@ -65,6 +73,23 @@ impl TypeRegistry {
         type_name: &'static str,
     ) -> TypeMetadata {
         self.register_named::<T>(RegisteredTypeKind::Component, RegistrationSource::User, type_name)
+    }
+
+    pub fn register_component_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.register_factory::<T, F>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::User,
+            type_name,
+            factory,
+        )
     }
 
     pub fn register_builtin_component<T: Component + 'static>(&mut self) -> TypeMetadata {
@@ -93,6 +118,23 @@ impl TypeRegistry {
         self.register_named::<T>(RegisteredTypeKind::Script, RegistrationSource::User, type_name)
     }
 
+    pub fn register_script_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.register_factory::<T, F>(
+            RegisteredTypeKind::Script,
+            RegistrationSource::User,
+            type_name,
+            factory,
+        )
+    }
+
     pub fn register_builtin_script<T: Script + 'static>(&mut self) -> TypeMetadata {
         self.register::<T>(RegisteredTypeKind::Script, RegistrationSource::BuiltIn)
     }
@@ -109,12 +151,12 @@ impl TypeRegistry {
     }
 
     pub fn get_by_id(&self, type_id: TypeId) -> Option<&TypeMetadata> {
-        self.types_by_id.get(&type_id)
+        self.types_by_id.get(&type_id).map(|entry| &entry.metadata)
     }
 
     pub fn get_by_name(&self, type_name: &str) -> Option<&TypeMetadata> {
         let type_id = self.types_by_name.get(type_name)?;
-        self.types_by_id.get(type_id)
+        self.types_by_id.get(type_id).map(|entry| &entry.metadata)
     }
 
     pub fn get_component<T: Component + 'static>(&self) -> Option<&TypeMetadata> {
@@ -128,13 +170,16 @@ impl TypeRegistry {
     }
 
     pub fn registered_types(&self) -> Vec<TypeMetadata> {
-        self.types_by_id.values().copied().collect()
+        self.types_by_id
+            .values()
+            .map(|entry| entry.metadata)
+            .collect()
     }
 
     pub fn registered_builtin_types(&self) -> Vec<TypeMetadata> {
         self.types_by_id
             .values()
-            .copied()
+            .map(|entry| entry.metadata)
             .filter(|metadata| metadata.source == RegistrationSource::BuiltIn)
             .collect()
     }
@@ -142,9 +187,45 @@ impl TypeRegistry {
     pub fn registered_user_types(&self) -> Vec<TypeMetadata> {
         self.types_by_id
             .values()
-            .copied()
+            .map(|entry| entry.metadata)
             .filter(|metadata| metadata.source == RegistrationSource::User)
             .collect()
+    }
+
+    pub fn has_object_factory(&self, type_id: TypeId) -> bool {
+        self.types_by_id
+            .get(&type_id)
+            .and_then(|entry| entry.object_factory.as_ref())
+            .is_some()
+    }
+
+    pub fn add_to_object(&self, object: &mut Object, type_id: TypeId) -> bool {
+        let Some(factory) = self
+            .types_by_id
+            .get(&type_id)
+            .and_then(|entry| entry.object_factory.as_ref())
+        else {
+            return false;
+        };
+        factory(object)
+    }
+
+    fn register_object_factory<T, F>(
+        &mut self,
+        kind: RegisteredTypeKind,
+        source: RegistrationSource,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: 'static,
+        F: Fn(&mut Object) -> bool + Send + Sync + 'static,
+    {
+        let metadata = self.register_named::<T>(kind, source, type_name);
+        if let Some(entry) = self.types_by_id.get_mut(&metadata.type_id) {
+            entry.object_factory = Some(Arc::new(factory));
+        }
+        metadata
     }
 
     fn register<T: 'static>(
@@ -169,7 +250,40 @@ impl TypeRegistry {
         };
 
         self.types_by_name.insert(metadata.type_name, metadata.type_id);
-        self.types_by_id.insert(metadata.type_id, metadata);
+        self.types_by_id.insert(
+            metadata.type_id,
+            TypeRegistration {
+                metadata,
+                object_factory: None,
+            },
+        );
+        metadata
+    }
+
+    fn register_factory<T, F>(
+        &mut self,
+        kind: RegisteredTypeKind,
+        source: RegistrationSource,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        let metadata = self.register_named::<T>(kind, source, type_name);
+        let object_factory: TypeObjectFactory = Arc::new(move |object| {
+            if object.has_component::<T>() {
+                return false;
+            }
+            object.add_component(factory());
+            true
+        });
+
+        if let Some(entry) = self.types_by_id.get_mut(&metadata.type_id) {
+            entry.object_factory = Some(object_factory);
+        }
+
         metadata
     }
 }
@@ -403,8 +517,73 @@ impl RuntimeRegistry {
         self.types.register_component::<T>()
     }
 
+    pub fn register_component_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types.register_factory::<T, F>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::User,
+            type_name::<T>(),
+            factory,
+        )
+    }
+
+    pub fn register_component_object_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn(&mut Object) -> bool + Send + Sync + 'static,
+    {
+        self.types.register_object_factory::<T, F>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::User,
+            type_name::<T>(),
+            factory,
+        )
+    }
+
+    pub fn register_component_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types
+            .register_component_named_factory::<T, F>(type_name, factory)
+    }
+
     pub fn register_builtin_component<T: Component + 'static>(&mut self) -> TypeMetadata {
         self.types.register_builtin_component::<T>()
+    }
+
+    pub fn register_builtin_component_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types.register_factory::<T, F>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::BuiltIn,
+            type_name::<T>(),
+            factory,
+        )
+    }
+
+    pub fn register_builtin_component_object_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn(&mut Object) -> bool + Send + Sync + 'static,
+    {
+        self.types.register_object_factory::<T, F>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::BuiltIn,
+            type_name::<T>(),
+            factory,
+        )
     }
 
     pub fn register_component_named<T: Component + 'static>(
@@ -418,8 +597,47 @@ impl RuntimeRegistry {
         self.types.register_script::<T>()
     }
 
+    pub fn register_script_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types.register_factory::<T, F>(
+            RegisteredTypeKind::Script,
+            RegistrationSource::User,
+            type_name::<T>(),
+            factory,
+        )
+    }
+
+    pub fn register_script_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types
+            .register_script_named_factory::<T, F>(type_name, factory)
+    }
+
     pub fn register_builtin_script<T: Script + 'static>(&mut self) -> TypeMetadata {
         self.types.register_builtin_script::<T>()
+    }
+
+    pub fn register_builtin_script_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.types.register_factory::<T, F>(
+            RegisteredTypeKind::Script,
+            RegistrationSource::BuiltIn,
+            type_name::<T>(),
+            factory,
+        )
     }
 
     pub fn register_script_named<T: Script + 'static>(
@@ -458,6 +676,10 @@ impl RuntimeRegistry {
     pub fn spawn_archetype_by_name(&self, world: &mut World, name: &str) -> Option<ObjectId> {
         self.archetypes.spawn_by_name(world, name)
     }
+
+    pub fn add_type_to_object(&self, object: &mut Object, type_id: TypeId) -> bool {
+        self.types.add_to_object(object, type_id)
+    }
 }
 
 #[cfg(test)]
@@ -467,11 +689,12 @@ mod tests {
         TypeRegistry,
     };
     use crate::{
-        components::Transform,
+        components::{SerializedFieldAccess, Transform},
         ocs::{Object, Script, ScriptContext, World},
     };
 
     struct TestScript;
+    impl SerializedFieldAccess for TestScript {}
 
     impl Script for TestScript {
         fn update(&mut self, _ctx: &mut ScriptContext, _dt: f32) {}

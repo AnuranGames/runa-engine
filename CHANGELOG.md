@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Runtime lifecycle**
+  - Added `late_update()` to the script lifecycle
+  - `World::update()` now runs `update()` for all objects first and `late_update()` in a second pass
+
+- **Runtime/editor type metadata**
+  - Added serialized field metadata for runtime-owned components and scripts
+  - Added support for generic serialized component/script storage for editor-facing project data
+  - Added project metadata snapshots for archetypes, components, and scripts
+
+- **Editor asset support**
+  - Added editor-only SVG icon loading with PNG fallback
+  - Added component icon support in the viewport and inspector
+  - Added `folder-empty` handling and root-folder navigation in the content browser
+
+- **Editor workflow**
+  - Added runtime-registry-driven object creation for:
+    - empty objects
+    - archetypes
+    - components
+    - scripts
+  - Added inspector separation for `Object`, `Transform`, `Components`, and `Scripts`
+  - Added bottom inspector actions for adding components and scripts
+
+### Changed
+
+- **Camera API**
+  - `viewport_size` was removed from public camera constructors
+  - `Camera::new_ortho(width, height)` now stores world-visible size directly
+  - `viewport_size` is now runtime-owned state updated by the app/editor from the actual render target size
+
+- **Orthographic camera behavior**
+  - Orthographic projection now uses a consistent `look_at_rh` view path
+  - Orthographic camera orientation was aligned to `-Z`
+  - Orthographic visible area, editor overlays, and `screen_to_world()` now use the same aspect-aware visible size model
+
+- **Editor architecture**
+  - `runa_editor` was split into smaller `editor_app` modules for UI, viewport, project flow, world operations, helpers, and placeables
+  - Inspector rows now follow a unified `label on the left / controls on the right` layout
+  - Mesh renderer editing now supports selecting built-in meshes from the inspector
+
+- **Examples and scaffolding**
+  - Project scaffolding now generates typed-archetype-first runtime bootstrap
+  - Bundled examples were updated to the newer camera constructors and typed archetype flow
+  - `sandbox` camera follow now runs in `late_update()`
+
+### Fixed
+
+- Editor viewport color mismatch caused by incorrect sRGB handling when sampling offscreen targets through `egui`
+- Orthographic camera rendering issues related to aspect handling, direction, and visible bounds
+- `screen_to_world()` drift and cursor interaction issues at wide resolutions/fullscreen
+- Runtime/editor mismatch when using orthographic cameras with resized viewports
+- Editor/project metadata refresh now updates archetype/component/script lists from project bootstrap metadata
+- Project scripts and serialized fields are now visible again in editor-backed inspection flows
+- Final game rendering now matches source sprite colors more closely than the old editor viewport path
+
 ## [0.3.0-alpha.1] - 2026-04-20
 
 ### Added

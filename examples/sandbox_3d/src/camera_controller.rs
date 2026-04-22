@@ -4,10 +4,11 @@ use runa_core::input_system;
 use runa_core::input_system::get_mouse_delta;
 use runa_core::input_system::{Input, KeyCode, MouseButton};
 use runa_core::ocs::{Object, Script, ScriptContext, World};
-use runa_engine::RunaArchetype;
+use runa_engine::{RunaArchetype, RunaScript};
 
 static mut CURSOR_LOCKED: bool = false;
 
+#[derive(RunaScript)]
 pub struct CameraController {
     position: Vec3,
     yaw: f32,
@@ -113,7 +114,6 @@ pub fn create_camera_controller() -> Object {
             75.0_f32.to_radians(),
             0.1,
             1000.0,
-            (1280, 720),
         ))
         .with(ActiveCamera)
         .with(CameraController::new())

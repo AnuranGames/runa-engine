@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use runa_asset::{AudioAsset, Handle, TextureAsset};
 use runa_core::components::{
     ActiveCamera, AudioSource, Camera, Mesh, MeshRenderer, ObjectDefinitionInstance,
-    PhysicsCollision, ProjectionType, SpriteRenderer, Tilemap, TilemapLayer, Transform,
+    PhysicsCollision, ProjectionType, SerializedField, SerializedTypeEntry, SerializedTypeKind,
+    SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform,
 };
 use runa_core::glam::{IVec2, Quat, USizeVec2, Vec2, Vec3};
 use runa_core::ocs::Object;
@@ -30,6 +31,8 @@ pub struct WorldObjectAsset {
     pub active_camera: bool,
     pub audio_source: Option<AudioSourceAsset>,
     pub physics_collision: Option<PhysicsCollisionAsset>,
+    pub serialized_components: Vec<SerializedObjectTypeAsset>,
+    pub serialized_scripts: Vec<SerializedObjectTypeAsset>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +46,39 @@ pub struct PlaceableObjectDescriptor {
 pub struct PlaceableObjectRecord {
     pub descriptor: PlaceableObjectDescriptor,
     pub object: WorldObjectAsset,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectRegisteredTypeKind {
+    Component,
+    Script,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectRegistrationSource {
+    BuiltIn,
+    User,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectRegisteredTypeRecord {
+    pub type_name: String,
+    pub kind: ProjectRegisteredTypeKind,
+    pub source: ProjectRegistrationSource,
+    pub editor_addable: bool,
+    pub default_fields: Vec<SerializedField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectMetadataSnapshot {
+    pub object_records: Vec<PlaceableObjectRecord>,
+    pub registered_types: Vec<ProjectRegisteredTypeRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializedObjectTypeAsset {
+    pub type_name: String,
+    pub fields: Vec<SerializedField>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +112,9 @@ pub struct SpriteRendererAsset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MeshPrimitiveAsset {
     Cube { size: f32 },
+    Quad { width: f32, height: f32 },
+    Plane { width: f32, depth: f32 },
+    Pyramid { width: f32, height: f32, depth: f32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +148,7 @@ impl Default for CameraAsset {
             target: [0.0, 0.0, 0.0],
             up: [0.0, 1.0, 0.0],
             perspective: true,
-            ortho_size: [128.0, 72.0],
+            ortho_size: [320.0, 180.0],
             near: 0.1,
             far: 1000.0,
             fov_radians: 75.0_f32.to_radians(),
@@ -169,6 +208,16 @@ pub fn load_world(path: impl AsRef<Path>) -> Result<World, ProjectError> {
     Ok(asset.into_world_with_project_root(project_root.as_deref()))
 }
 
+pub fn load_world_with_runtime_registry(
+    path: impl AsRef<Path>,
+    runtime_registry: &runa_core::registry::RuntimeRegistry,
+) -> Result<World, ProjectError> {
+    let content = fs::read_to_string(path.as_ref())?;
+    let asset: WorldAsset = ron::from_str(&content)?;
+    let project_root = project_root_for_world_path(path.as_ref());
+    Ok(asset.into_world_with_runtime_registry(project_root.as_deref(), runtime_registry))
+}
+
 pub fn load_world_with_object_loader<F>(
     path: impl AsRef<Path>,
     object_loader: F,
@@ -201,6 +250,22 @@ impl WorldAsset {
     pub fn into_world_with_project_root(self, project_root: Option<&Path>) -> World {
         let mut world = World::default();
         for object in self.objects.into_iter().map(|object| object.into_object(project_root)) {
+            world.spawn(object);
+        }
+        world
+    }
+
+    pub fn into_world_with_runtime_registry(
+        self,
+        project_root: Option<&Path>,
+        runtime_registry: &runa_core::registry::RuntimeRegistry,
+    ) -> World {
+        let mut world = World::default();
+        for object in self
+            .objects
+            .into_iter()
+            .map(|object| object.into_object_with_runtime_registry(project_root, Some(runtime_registry)))
+        {
             world.spawn(object);
         }
         world
@@ -258,10 +323,20 @@ impl WorldObjectAsset {
             physics_collision: object
                 .get_component::<PhysicsCollision>()
                 .map(PhysicsCollisionAsset::from_component),
+            serialized_components: collect_serialized_type_assets(object, SerializedTypeKind::Component),
+            serialized_scripts: collect_serialized_type_assets(object, SerializedTypeKind::Script),
         }
     }
 
     pub fn into_object(self, project_root: Option<&Path>) -> Object {
+        self.into_object_with_runtime_registry(project_root, None)
+    }
+
+    pub fn into_object_with_runtime_registry(
+        self,
+        project_root: Option<&Path>,
+        runtime_registry: Option<&runa_core::registry::RuntimeRegistry>,
+    ) -> Object {
         let object_id = self.object_id.clone();
         let mut object = Object::new(self.name);
         object.add_component(self.transform.into_component());
@@ -274,9 +349,16 @@ impl WorldObjectAsset {
         }
         if let Some(tilemap) = self.tilemap {
             object.add_component(tilemap.into_component());
+            if object.get_component::<TilemapRenderer>().is_none() {
+                object.add_component(TilemapRenderer::new());
+            }
         }
         if let Some(camera) = self.camera {
-            object.add_component(camera.into_component());
+            let transform = object
+                .get_component::<Transform>()
+                .cloned()
+                .unwrap_or_else(Transform::default);
+            object.add_component(camera.into_component_with_transform(&transform));
         }
         if self.active_camera {
             object.add_component(ActiveCamera);
@@ -290,6 +372,19 @@ impl WorldObjectAsset {
         if let Some(object_id) = object_id {
             object.add_component(ObjectDefinitionInstance::new(object_id));
         }
+
+        apply_serialized_type_assets(
+            &mut object,
+            runtime_registry,
+            SerializedTypeKind::Component,
+            self.serialized_components,
+        );
+        apply_serialized_type_assets(
+            &mut object,
+            runtime_registry,
+            SerializedTypeKind::Script,
+            self.serialized_scripts,
+        );
 
         object
     }
@@ -330,12 +425,124 @@ impl WorldObjectAsset {
                 if self.physics_collision.is_some() {
                     spawned.physics_collision = self.physics_collision;
                 }
-                return spawned.into_object(project_root);
+                return spawned.into_object_with_runtime_registry(project_root, None);
             }
         }
 
-        self.into_object(project_root)
+        self.into_object_with_runtime_registry(project_root, None)
     }
+}
+
+fn collect_serialized_type_assets(
+    object: &Object,
+    kind: SerializedTypeKind,
+) -> Vec<SerializedObjectTypeAsset> {
+    let mut assets = Vec::new();
+    for info in object.component_infos() {
+        let matches_kind = match kind {
+            SerializedTypeKind::Component => {
+                info.kind() == runa_core::components::ComponentRuntimeKind::Component
+            }
+            SerializedTypeKind::Script => {
+                info.kind() == runa_core::components::ComponentRuntimeKind::Script
+            }
+        };
+        if !matches_kind || is_builtin_serialized_type(info.type_id()) {
+            continue;
+        }
+
+        if let Some(fields) = object.with_component_by_type_id(info.type_id(), |component| {
+            component.serialized_fields()
+        }) {
+            assets.push(SerializedObjectTypeAsset {
+                type_name: info.type_name().to_string(),
+                fields,
+            });
+        }
+    }
+
+    if let Some(storage) = object.get_component::<SerializedTypeStorage>() {
+        for entry in storage.entries_of_kind(kind) {
+            assets.push(SerializedObjectTypeAsset {
+                type_name: entry.type_name.clone(),
+                fields: entry.fields.clone(),
+            });
+        }
+    }
+
+    dedup_serialized_assets(assets)
+}
+
+fn dedup_serialized_assets(
+    assets: Vec<SerializedObjectTypeAsset>,
+) -> Vec<SerializedObjectTypeAsset> {
+    let mut deduped: Vec<SerializedObjectTypeAsset> = Vec::new();
+    for asset in assets {
+        if let Some(existing) = deduped
+            .iter_mut()
+            .find(|existing| existing.type_name == asset.type_name)
+        {
+            *existing = asset;
+        } else {
+            deduped.push(asset);
+        }
+    }
+    deduped
+}
+
+fn apply_serialized_type_assets(
+    object: &mut Object,
+    runtime_registry: Option<&runa_core::registry::RuntimeRegistry>,
+    kind: SerializedTypeKind,
+    assets: Vec<SerializedObjectTypeAsset>,
+) {
+    for asset in assets {
+        if let Some(registry) = runtime_registry {
+            if let Some(metadata) = registry.types().get_by_name(&asset.type_name) {
+                if registry.add_type_to_object(object, metadata.type_id()) {
+                    for field in &asset.fields {
+                        let _ = object.with_component_mut_by_type_id(metadata.type_id(), |component| {
+                            component.set_serialized_field(&field.name, field.value.clone())
+                        });
+                    }
+                    continue;
+                }
+            }
+        }
+
+        let mut storage = object
+            .get_component::<SerializedTypeStorage>()
+            .cloned()
+            .unwrap_or_default();
+        storage.upsert(SerializedTypeEntry {
+            type_name: asset.type_name,
+            kind,
+            fields: asset.fields,
+        });
+        if object.get_component::<SerializedTypeStorage>().is_some() {
+            object.remove_component_type_id(std::any::TypeId::of::<SerializedTypeStorage>());
+        }
+        object.add_component(storage);
+    }
+}
+
+fn is_builtin_serialized_type(type_id: std::any::TypeId) -> bool {
+    use std::any::TypeId;
+
+    [
+        TypeId::of::<Transform>(),
+        TypeId::of::<MeshRenderer>(),
+        TypeId::of::<SpriteRenderer>(),
+        TypeId::of::<Tilemap>(),
+        TypeId::of::<TilemapRenderer>(),
+        TypeId::of::<Camera>(),
+        TypeId::of::<ActiveCamera>(),
+        TypeId::of::<AudioSource>(),
+        TypeId::of::<PhysicsCollision>(),
+        TypeId::of::<ObjectDefinitionInstance>(),
+        TypeId::of::<SerializedTypeStorage>(),
+    ]
+    .contains(&type_id)
 }
 
 impl TransformAsset {
@@ -370,6 +577,11 @@ impl MeshRendererAsset {
     fn into_component(self) -> MeshRenderer {
         let mesh = match self.primitive {
             MeshPrimitiveAsset::Cube { size } => Mesh::cube(size),
+            MeshPrimitiveAsset::Quad { width, height } => Mesh::quad(width, height),
+            MeshPrimitiveAsset::Plane { width, depth } => Mesh::plane(width, depth),
+            MeshPrimitiveAsset::Pyramid { width, height, depth } => {
+                Mesh::pyramid(width, height, depth)
+            }
         };
 
         MeshRenderer {
@@ -418,28 +630,31 @@ impl CameraAsset {
         }
     }
 
-    fn into_component(self) -> Camera {
+    fn into_component_with_transform(self, transform: &Transform) -> Camera {
+        let inverse_rotation = transform.rotation.inverse();
+        let local_position = inverse_rotation * (Vec3::from_array(self.position) - transform.position);
+        let local_target = inverse_rotation * (Vec3::from_array(self.target) - transform.position);
+        let local_up = inverse_rotation * Vec3::from_array(self.up);
+
         if self.perspective {
-            Camera::new_perspective(
-                Vec3::from_array(self.position),
-                Vec3::from_array(self.target),
-                Vec3::from_array(self.up),
+            let mut camera = Camera::new_perspective(
+                local_position,
+                local_target,
+                local_up,
                 self.fov_radians,
                 self.near,
                 self.far,
-                (self.viewport_size[0], self.viewport_size[1]),
-            )
-        } else {
-            let mut camera = Camera::new_ortho(
-                self.ortho_size[0] * 10.0,
-                self.ortho_size[1] * 10.0,
-                (self.viewport_size[0], self.viewport_size[1]),
             );
-            camera.position = Vec3::from_array(self.position);
-            camera.target = Vec3::from_array(self.target);
-            camera.up = Vec3::from_array(self.up);
+            camera.resize(self.viewport_size[0], self.viewport_size[1]);
+            camera
+        } else {
+            let mut camera = Camera::new_ortho(self.ortho_size[0], self.ortho_size[1]);
+            camera.position = local_position;
+            camera.target = local_target;
+            camera.up = local_up;
             camera.near = self.near;
             camera.far = self.far;
+            camera.resize(self.viewport_size[0], self.viewport_size[1]);
             camera
         }
     }
@@ -552,19 +767,39 @@ impl TilemapLayerAsset {
 }
 
 fn infer_mesh_primitive(mesh: &Mesh) -> Option<MeshPrimitiveAsset> {
-    if mesh.vertices.is_empty() {
-        return None;
+    let hint = mesh.primitive_hint?;
+    let (min, max) = mesh_bounds(mesh)?;
+    let size = max - min;
+    match hint {
+        runa_core::components::BuiltinMeshPrimitive::Cube => {
+            Some(MeshPrimitiveAsset::Cube { size: size.x.abs().max(size.y.abs()).max(size.z.abs()) })
+        }
+        runa_core::components::BuiltinMeshPrimitive::Quad => Some(MeshPrimitiveAsset::Quad {
+            width: size.x.abs(),
+            height: size.y.abs(),
+        }),
+        runa_core::components::BuiltinMeshPrimitive::Plane => Some(MeshPrimitiveAsset::Plane {
+            width: size.x.abs(),
+            depth: size.z.abs(),
+        }),
+        runa_core::components::BuiltinMeshPrimitive::Pyramid => Some(MeshPrimitiveAsset::Pyramid {
+            width: size.x.abs(),
+            height: size.y.abs(),
+            depth: size.z.abs(),
+        }),
     }
+}
 
-    let mut min_x = f32::MAX;
-    let mut max_x = f32::MIN;
+fn mesh_bounds(mesh: &Mesh) -> Option<(Vec3, Vec3)> {
+    let first = mesh.vertices.first()?;
+    let mut min = Vec3::from_array(first.position);
+    let mut max = Vec3::from_array(first.position);
     for vertex in &mesh.vertices {
-        min_x = min_x.min(vertex.position[0]);
-        max_x = max_x.max(vertex.position[0]);
+        let p = Vec3::from_array(vertex.position);
+        min = min.min(p);
+        max = max.max(p);
     }
-
-    let size = (max_x - min_x).abs();
-    Some(MeshPrimitiveAsset::Cube { size })
+    Some((min, max))
 }
 
 fn project_root_for_world_path(path: &Path) -> Option<PathBuf> {

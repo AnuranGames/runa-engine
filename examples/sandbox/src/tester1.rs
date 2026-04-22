@@ -2,8 +2,9 @@ use runa_core::components::{CursorInteractable, SpriteRenderer, Transform};
 use runa_core::glam::Vec3;
 use runa_core::input_system::*;
 use runa_core::ocs::{Object, Script, ScriptContext, World};
-use runa_engine::RunaArchetype;
+use runa_engine::{RunaArchetype, RunaScript};
 
+#[derive(RunaScript)]
 pub struct RotatingSprite1;
 
 impl RotatingSprite1 {

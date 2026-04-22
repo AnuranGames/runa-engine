@@ -17,11 +17,14 @@ Runa keeps runtime construction code-first, but some systems still need stable t
 - archetype browsers
 - editor integration
 
-The current registry is metadata-only. It stores:
+The runtime registry stores:
 
 - type name
 - `TypeId`
 - kind (`Component` or `Script`)
+- built-in vs user registration origin
+- optional runtime factory information for editor/tooling creation
+- typed archetype factories keyed by `ArchetypeKey`
 
 ## Engine Bootstrap
 
@@ -67,6 +70,11 @@ fn register_game_types(engine: &mut Engine) {
 ```
 
 The derive does not auto-register anything globally. Registration still happens explicitly in your bootstrap code.
+
+For editor/tooling-visible fields, `RunaComponent` and `RunaScript` also expose:
+
+- public fields
+- private fields marked with `#[serialize_field]`
 
 ## Archetypes
 
@@ -122,6 +130,6 @@ You do not have to use archetypes for every object. Manual `world.spawn(Object::
 
 ## Current Limits
 
-- registry metadata is not yet full generic serialization
+- runtime factories are still required for editor-side creation of live types
 - archetypes are typed code templates, not serialized prefab assets
-- editor integration still has transitional areas
+- prefab/template unification is still incomplete

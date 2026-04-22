@@ -2,6 +2,7 @@ use runa_core::components::{CursorInteractable, SpriteRenderer, Transform};
 use runa_core::glam::Vec3;
 use runa_core::input_system::*;
 use runa_core::ocs::{Object, Script, ScriptContext, World};
+use runa_core::SerializedFieldAccess;
 use runa_engine::RunaArchetype;
 
 pub struct RotatingSprite1;
@@ -11,6 +12,8 @@ impl RotatingSprite1 {
         Self
     }
 }
+
+impl SerializedFieldAccess for RotatingSprite1 {}
 
 impl Script for RotatingSprite1 {
     fn start(&mut self, ctx: &mut ScriptContext) {

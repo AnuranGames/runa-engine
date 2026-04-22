@@ -39,4 +39,24 @@ impl Transform {
         self.previous_position = self.position;
         self.previous_rotation = self.rotation;
     }
+
+    pub fn interpolated_position(&self, interpolation_factor: f32) -> Vec3 {
+        Vec3::lerp(
+            self.previous_position,
+            self.position,
+            interpolation_factor.clamp(0.0, 1.0),
+        )
+    }
+
+    pub fn interpolated_rotation(&self, interpolation_factor: f32) -> Quat {
+        self.previous_rotation.slerp(
+            self.rotation,
+            interpolation_factor.clamp(0.0, 1.0),
+        )
+    }
+
+    pub fn sync_previous_to_current(&mut self) {
+        self.previous_position = self.position;
+        self.previous_rotation = self.rotation;
+    }
 }

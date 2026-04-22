@@ -46,16 +46,5 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 // ===== Fragment Shader =====
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Simple diffuse lighting (directional light)
-    let light_dir = normalize(vec3<f32>(1.0, -1.0, 1.0));
-    let normal = normalize(in.normal);
-    let diffuse = max(dot(normal, light_dir), 0.0) * 0.8 + 0.2; // ambient + diffuse
-
-    // Use the color from the uniform
-    let base_color = globals.color;
-
-    // Apply lighting
-    let final_color = base_color * diffuse;
-
-    return final_color;
+    return globals.color;
 }

@@ -11,8 +11,8 @@ use crate::{
         SpriteRenderer, Tilemap, Transform,
     },
     debug_renderer::DebugRenderer,
-    registry::{ArchetypeKey, RunaArchetype, RuntimeRegistry},
     ocs::{Object, ObjectId, Script},
+    registry::{ArchetypeKey, RunaArchetype, RuntimeRegistry},
 };
 
 pub struct World {
@@ -125,6 +125,9 @@ impl World {
         self.processing_lifecycle = true;
         for object in &mut self.objects {
             object.run_update(dt);
+        }
+        for object in &mut self.objects {
+            object.run_late_update(dt);
         }
         self.processing_lifecycle = false;
         self.apply_commands();
@@ -242,8 +245,8 @@ impl World {
                 // Create model matrix
                 let model_matrix = glam::Mat4::from_scale_rotation_translation(
                     transform.scale,
-                    transform.rotation,
-                    transform.position,
+                    transform.interpolated_rotation(interpolation_factor),
+                    transform.interpolated_position(interpolation_factor),
                 );
 
                 render_queue.draw_mesh_3d(
@@ -263,27 +266,18 @@ impl World {
                     continue;
                 };
 
-                // Interpolate position
-                let interpolated_position = Vec3::lerp(
-                    transform.previous_position,
-                    transform.position,
-                    interpolation_factor,
-                );
-
-                let interpolated_rotation = transform.previous_rotation
-                    + (transform.rotation - transform.previous_rotation) * interpolation_factor;
-
                 render_queue.draw_sprite(
                     Arc::from(texture),
-                    interpolated_position,
-                    interpolated_rotation,
+                    transform.interpolated_position(interpolation_factor),
+                    transform.interpolated_rotation(interpolation_factor),
                     transform.scale,
                 );
             }
 
-            if let (Some(tilemap), Some(transform)) = (
+            if let (Some(tilemap), Some(transform), Some(_renderer)) = (
                 object.get_component::<Tilemap>(),
                 object.get_component::<Transform>(),
+                object.get_component::<crate::components::TilemapRenderer>(),
             ) {
                 for layer in &tilemap.layers {
                     if !layer.visible {
@@ -302,7 +296,8 @@ impl World {
 
                                 // Tile world position relative to the object
                                 let world_pos = tilemap.tile_to_world(x, y);
-                                let final_pos = transform.position + world_pos;
+                                let final_pos =
+                                    transform.interpolated_position(interpolation_factor) + world_pos;
 
                                 render_queue.draw_tile(
                                     tile.texture.clone().unwrap(),
@@ -430,16 +425,15 @@ impl World {
                 return false;
             };
 
-            collider.intersects(
-                center,
-                other_collider,
-                other_transform.position.truncate(),
-            )
+            collider.intersects(center, other_collider, other_transform.position.truncate())
         })
     }
 
     fn despawn_immediate(&mut self, id: ObjectId) -> Option<Object> {
-        let index = self.objects.iter().position(|object| object.id() == Some(id))?;
+        let index = self
+            .objects
+            .iter()
+            .position(|object| object.id() == Some(id))?;
         Some(self.objects.remove(index))
     }
 
@@ -464,11 +458,12 @@ impl Default for World {
 mod tests {
     use super::World;
     use crate::{
-        components::Transform,
+        components::{SerializedFieldAccess, Transform},
         ocs::{Object, Script, ScriptContext},
     };
 
     struct DespawnSelf;
+    impl SerializedFieldAccess for DespawnSelf {}
 
     impl Script for DespawnSelf {
         fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {

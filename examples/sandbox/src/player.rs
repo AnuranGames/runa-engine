@@ -18,6 +18,7 @@ impl Health {
     }
 }
 
+
 #[derive(RunaScript)]
 pub struct PlayerController {
     speed: f32,
@@ -27,7 +28,7 @@ pub struct PlayerController {
 impl PlayerController {
     pub fn new() -> Self {
         Self {
-            speed: 0.25,
+            speed: 15.0,
             direction: Vec3::ZERO,
         }
     }
@@ -66,7 +67,7 @@ impl Script for PlayerController {
             return;
         };
 
-        let movement = self.direction.normalize_or_zero() * self.speed;
+        let movement = self.direction.normalize_or_zero() * self.speed * _dt;
         let next_position = current_position + movement;
 
         if !ctx.would_collide_2d_at(next_position.truncate()) {
@@ -77,15 +78,56 @@ impl Script for PlayerController {
     }
 }
 
+
+#[derive(RunaScript)]
+pub struct PlayerCameraFollow {
+    #[serialize_field]
+    lock_z: f32,
+}
+
+impl PlayerCameraFollow {
+    pub fn new() -> Self {
+        Self { lock_z: 0.0 }
+    }
+}
+
+impl Script for PlayerCameraFollow {
+    fn late_update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+        let Some(player_id) = ctx.find_first_with::<PlayerController>() else {
+            return;
+        };
+        let Some(player_position) = ctx
+            .get_object(player_id)
+            .and_then(|player| player.get_component::<Transform>())
+            .map(|transform| transform.position)
+        else {
+            return;
+        };
+        let Some(transform) = ctx.get_component_mut::<Transform>() else {
+            return;
+        };
+
+        // Hard follow keeps the player and camera on the same fixed-step path.
+        // This avoids the visible screen-space jitter that appears when the
+        // camera smooths toward a target while the target itself is interpolated.
+        transform.position = Vec3::new(player_position.x, player_position.y, self.lock_z);
+    }
+}
+
 pub fn create_player() -> Object {
     Object::new("Player")
-        .with(Camera::new_ortho(320.0, 180.0, (1280, 720)))
-        .with(ActiveCamera)
         .with(SpriteRenderer::new(Some(load_image!("assets/art/Charactert.png"))))
-        .with(Collider2D::new(16.0, 16.0))
-        .with(Canvas::new(CanvasSpace::Camera))
+        .with(Collider2D::new(2.0, 2.0))
         .with(Health::new(100))
         .with(PlayerController::new())
+}
+
+pub fn create_player_camera() -> Object {
+    Object::new("Player Camera")
+        .with(Camera::new_ortho(32.0, 18.0))
+        .with(ActiveCamera)
+        .with(Canvas::new(CanvasSpace::Camera))
+        // .with(PlayerCameraFollow::new())
 }
 
 #[derive(RunaArchetype)]
@@ -98,8 +140,20 @@ impl PlayerArchetype {
     }
 }
 
+#[derive(RunaArchetype)]
+#[runa(name = "player_camera")]
+pub struct PlayerCameraArchetype;
+
+impl PlayerCameraArchetype {
+    pub fn create(world: &mut World) -> u64 {
+        world.spawn(create_player_camera())
+    }
+}
+
 pub fn register_types(engine: &mut Engine) {
     engine.register::<Health>();
     engine.register::<PlayerController>();
+    engine.register::<PlayerCameraFollow>();
     engine.register_archetype::<PlayerArchetype>();
+    engine.register_archetype::<PlayerCameraArchetype>();
 }

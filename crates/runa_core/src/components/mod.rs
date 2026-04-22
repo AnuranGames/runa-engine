@@ -8,6 +8,7 @@ mod cursor_interactable;
 mod mesh_renderer;
 mod object_definition_instance;
 mod physics_collision;
+mod serialized_type_storage;
 mod sprite_renderer;
 mod tilemap;
 mod transform;
@@ -19,12 +20,16 @@ pub use audio_source::AudioSource;
 pub use camera::Camera;
 pub use camera::ProjectionType;
 pub use collider2d::Collider2D;
-pub use component::Component;
+pub use component::{
+    Component, ComponentRuntimeKind, SerializedField, SerializedFieldAccess, SerializedFieldValue,
+};
 pub use cursor_interactable::CursorInteractable;
+pub use mesh_renderer::BuiltinMeshPrimitive;
 pub use mesh_renderer::Mesh;
 pub use mesh_renderer::MeshRenderer;
 pub use object_definition_instance::ObjectDefinitionInstance;
 pub use physics_collision::PhysicsCollision;
+pub use serialized_type_storage::{SerializedTypeEntry, SerializedTypeKind, SerializedTypeStorage};
 pub use sprite_renderer::SpriteRenderer;
 pub use tilemap::Rect;
 pub use tilemap::Tile;
@@ -37,7 +42,10 @@ pub use ui::Canvas;
 
 macro_rules! impl_component {
     ($($ty:ty),+ $(,)?) => {
-        $(impl Component for $ty {
+        $(
+        impl SerializedFieldAccess for $ty {}
+
+        impl Component for $ty {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -59,6 +67,7 @@ impl_component!(
     MeshRenderer,
     ObjectDefinitionInstance,
     PhysicsCollision,
+    SerializedTypeStorage,
     SpriteRenderer,
     Tilemap,
     TilemapRenderer,

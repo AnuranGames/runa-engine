@@ -13,6 +13,15 @@ pub struct Mesh {
     pub vertices: Vec<Vertex3D>,
     pub indices: Vec<u32>,
     pub texture: Option<std::sync::Arc<TextureAsset>>,
+    pub primitive_hint: Option<BuiltinMeshPrimitive>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinMeshPrimitive {
+    Cube,
+    Quad,
+    Plane,
+    Pyramid,
 }
 
 impl Mesh {
@@ -164,6 +173,81 @@ impl Mesh {
             vertices,
             indices,
             texture: None,
+            primitive_hint: Some(BuiltinMeshPrimitive::Cube),
+        }
+    }
+
+    pub fn quad(width: f32, height: f32) -> Self {
+        let hw = width * 0.5;
+        let hh = height * 0.5;
+        let vertices = vec![
+            Vertex3D { position: [-hw, -hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
+            Vertex3D { position: [ hw, -hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
+            Vertex3D { position: [ hw,  hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
+            Vertex3D { position: [-hw,  hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+        ];
+        let indices = vec![0, 1, 2, 2, 3, 0];
+        Self {
+            vertices,
+            indices,
+            texture: None,
+            primitive_hint: Some(BuiltinMeshPrimitive::Quad),
+        }
+    }
+
+    pub fn plane(width: f32, depth: f32) -> Self {
+        let hw = width * 0.5;
+        let hd = depth * 0.5;
+        let vertices = vec![
+            Vertex3D { position: [-hw, 0.0, -hd], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
+            Vertex3D { position: [ hw, 0.0, -hd], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
+            Vertex3D { position: [ hw, 0.0,  hd], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
+            Vertex3D { position: [-hw, 0.0,  hd], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
+        ];
+        let indices = vec![0, 1, 2, 2, 3, 0];
+        Self {
+            vertices,
+            indices,
+            texture: None,
+            primitive_hint: Some(BuiltinMeshPrimitive::Plane),
+        }
+    }
+
+    pub fn pyramid(width: f32, height: f32, depth: f32) -> Self {
+        let hw = width * 0.5;
+        let hd = depth * 0.5;
+        let apex = [0.0, height * 0.5, 0.0];
+        let base_y = -height * 0.5;
+        let vertices = vec![
+            Vertex3D { position: [-hw, base_y, -hd], normal: [0.0, -1.0, 0.0], uv: [0.0, 0.0] },
+            Vertex3D { position: [ hw, base_y, -hd], normal: [0.0, -1.0, 0.0], uv: [1.0, 0.0] },
+            Vertex3D { position: [ hw, base_y,  hd], normal: [0.0, -1.0, 0.0], uv: [1.0, 1.0] },
+            Vertex3D { position: [-hw, base_y,  hd], normal: [0.0, -1.0, 0.0], uv: [0.0, 1.0] },
+            Vertex3D { position: apex, normal: [0.0, 0.707, -0.707], uv: [0.5, 0.0] },
+            Vertex3D { position: [-hw, base_y, -hd], normal: [0.0, 0.707, -0.707], uv: [0.0, 1.0] },
+            Vertex3D { position: [ hw, base_y, -hd], normal: [0.0, 0.707, -0.707], uv: [1.0, 1.0] },
+            Vertex3D { position: apex, normal: [0.707, 0.707, 0.0], uv: [0.5, 0.0] },
+            Vertex3D { position: [ hw, base_y, -hd], normal: [0.707, 0.707, 0.0], uv: [0.0, 1.0] },
+            Vertex3D { position: [ hw, base_y,  hd], normal: [0.707, 0.707, 0.0], uv: [1.0, 1.0] },
+            Vertex3D { position: apex, normal: [0.0, 0.707, 0.707], uv: [0.5, 0.0] },
+            Vertex3D { position: [ hw, base_y,  hd], normal: [0.0, 0.707, 0.707], uv: [0.0, 1.0] },
+            Vertex3D { position: [-hw, base_y,  hd], normal: [0.0, 0.707, 0.707], uv: [1.0, 1.0] },
+            Vertex3D { position: apex, normal: [-0.707, 0.707, 0.0], uv: [0.5, 0.0] },
+            Vertex3D { position: [-hw, base_y,  hd], normal: [-0.707, 0.707, 0.0], uv: [0.0, 1.0] },
+            Vertex3D { position: [-hw, base_y, -hd], normal: [-0.707, 0.707, 0.0], uv: [1.0, 1.0] },
+        ];
+        let indices = vec![
+            0, 1, 2, 2, 3, 0,
+            4, 5, 6,
+            7, 8, 9,
+            10, 11, 12,
+            13, 14, 15,
+        ];
+        Self {
+            vertices,
+            indices,
+            texture: None,
+            primitive_hint: Some(BuiltinMeshPrimitive::Pyramid),
         }
     }
 }

@@ -47,11 +47,13 @@ pub struct Globals {
 /// Offscreen render target used by the editor viewport and previews.
 pub struct RenderTarget {
     _color_texture: Texture,
-    color_view: TextureView,
+    render_color_view: TextureView,
+    sample_color_view: TextureView,
     _depth_texture: Texture,
     depth_view: TextureView,
     size: (u32, u32),
-    _format: wgpu::TextureFormat,
+    _render_format: wgpu::TextureFormat,
+    _sample_format: wgpu::TextureFormat,
 }
 
 impl RenderTarget {
@@ -59,8 +61,12 @@ impl RenderTarget {
         self.size
     }
 
-    pub fn color_view(&self) -> &TextureView {
-        &self.color_view
+    pub fn render_view(&self) -> &TextureView {
+        &self.render_color_view
+    }
+
+    pub fn sample_view(&self) -> &TextureView {
+        &self.sample_color_view
     }
 }
 
@@ -427,7 +433,7 @@ impl<'window> Renderer<'window> {
             });
         self.encode_render_passes(
             &mut encoder,
-            target.color_view(),
+            target.render_view(),
             &target.depth_view,
             target.size(),
             queue,
@@ -911,9 +917,14 @@ impl<'window> Renderer<'window> {
     fn build_render_target(
         device: &wgpu::Device,
         size: (u32, u32),
-        format: wgpu::TextureFormat,
+        render_format: wgpu::TextureFormat,
     ) -> RenderTarget {
         let (width, height) = (size.0.max(1), size.1.max(1));
+        let sample_format = render_format.remove_srgb_suffix();
+        let mut view_formats = Vec::new();
+        if sample_format != render_format {
+            view_formats.push(render_format);
+        }
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Offscreen Color Texture"),
             size: wgpu::Extent3d {
@@ -924,20 +935,29 @@ impl<'window> Renderer<'window> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format,
+            format: sample_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &view_formats,
         });
-        let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let render_color_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(render_format),
+            ..Default::default()
+        });
+        let sample_color_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(sample_format),
+            ..Default::default()
+        });
         let (depth_texture, depth_view) = Self::create_depth_texture(device, (width, height));
 
         RenderTarget {
             _color_texture: color_texture,
-            color_view,
+            render_color_view,
+            sample_color_view,
             _depth_texture: depth_texture,
             depth_view,
             size: (width, height),
-            _format: format,
+            _render_format: render_format,
+            _sample_format: sample_format,
         }
     }
 

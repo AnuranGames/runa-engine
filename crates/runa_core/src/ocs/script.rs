@@ -1,4 +1,6 @@
-use crate::components::{Collider2D, Component};
+use crate::components::{
+    Collider2D, Component, ComponentRuntimeKind, SerializedFieldAccess,
+};
 use crate::ocs::{Object, ObjectHandle, ObjectId, ScriptCommands, World};
 use glam::Vec2;
 
@@ -93,6 +95,7 @@ impl<'a> ScriptContext<'a> {
 /// # Lifecycle
 /// 1. `start()` - Called once after the object enters the world
 /// 2. `update()` - Called every tick while object exists in the world
+/// 3. `late_update()` - Called after all regular updates for the tick
 ///
 /// # Example
 /// ```
@@ -125,7 +128,7 @@ impl<'a> ScriptContext<'a> {
 /// //     ctx.commands().despawn(id);
 /// // }
 /// ```
-pub trait Script: 'static {
+pub trait Script: SerializedFieldAccess + 'static {
     /// Called once on the first tick after the object is added to the world.
     ///
     /// Use this method to:
@@ -149,6 +152,12 @@ pub trait Script: 'static {
     /// Parameters:
     /// - `dt`: Delta time in seconds since last frame (use for frame-rate independent movement)
     fn update(&mut self, _ctx: &mut ScriptContext, _dt: f32) {}
+
+    /// Called after all regular `update()` calls for the current tick.
+    ///
+    /// Use this for dependent logic that must observe the final results of gameplay updates,
+    /// such as follow cameras and post-movement alignment.
+    fn late_update(&mut self, _ctx: &mut ScriptContext, _dt: f32) {}
 }
 
 impl<T: Script> Component for T {
@@ -160,11 +169,23 @@ impl<T: Script> Component for T {
         self
     }
 
+    fn runtime_kind(&self) -> ComponentRuntimeKind {
+        ComponentRuntimeKind::Script
+    }
+
+    fn runtime_type_name(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
+
     fn on_start(&mut self, ctx: &mut ScriptContext) {
         Script::start(self, ctx);
     }
 
     fn on_update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         Script::update(self, ctx, dt);
+    }
+
+    fn on_late_update(&mut self, ctx: &mut ScriptContext, dt: f32) {
+        Script::late_update(self, ctx, dt);
     }
 }

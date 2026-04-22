@@ -4,8 +4,10 @@ use runa_core::{
     components::{
         ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D,
         CursorInteractable, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision,
-        SpriteRenderer, Tilemap, TilemapRenderer, Transform, Component,
+        SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform, Component,
+        ui::CanvasSpace,
     },
+    glam::USizeVec2,
     ocs::{Object, Script, World},
     registry::{
         ArchetypeKey, ArchetypeMetadata, RunaArchetype, RunaComponentType, RunaScriptType,
@@ -42,6 +44,34 @@ impl Engine {
         self.runtime_registry.register_component::<T>()
     }
 
+    pub fn register_component_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.runtime_registry.register_component_factory::<T, F>(factory)
+    }
+
+    pub fn register_component_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Component + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.runtime_registry
+            .register_component_named_factory::<T, F>(type_name, factory)
+    }
+
+    pub fn register_default_component<T>(&mut self) -> TypeMetadata
+    where
+        T: Component + Default + 'static,
+    {
+        self.register_component_factory::<T, _>(T::default)
+    }
+
     pub fn register_component_named<T: Component + 'static>(
         &mut self,
         type_name: &'static str,
@@ -52,6 +82,34 @@ impl Engine {
 
     pub fn register_script<T: Script + 'static>(&mut self) -> TypeMetadata {
         self.runtime_registry.register_script::<T>()
+    }
+
+    pub fn register_script_factory<T, F>(&mut self, factory: F) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.runtime_registry.register_script_factory::<T, F>(factory)
+    }
+
+    pub fn register_script_named_factory<T, F>(
+        &mut self,
+        type_name: &'static str,
+        factory: F,
+    ) -> TypeMetadata
+    where
+        T: Script + 'static,
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        self.runtime_registry
+            .register_script_named_factory::<T, F>(type_name, factory)
+    }
+
+    pub fn register_default_script<T>(&mut self) -> TypeMetadata
+    where
+        T: Script + Default + 'static,
+    {
+        self.register_script_factory::<T, _>(T::default)
     }
 
     pub fn register<T: RunaTypeRegistration>(&mut self) -> TypeMetadata {
@@ -111,19 +169,53 @@ impl Engine {
 
     fn register_builtin_types(&mut self) {
         self.runtime_registry.register_builtin_component::<Transform>();
-        self.runtime_registry.register_builtin_component::<Camera>();
-        self.runtime_registry.register_builtin_component::<ActiveCamera>();
-        self.runtime_registry.register_builtin_component::<SpriteRenderer>();
-        self.runtime_registry.register_builtin_component::<Collider2D>();
-        self.runtime_registry.register_builtin_component::<Canvas>();
-        self.runtime_registry.register_builtin_component::<AudioListener>();
-        self.runtime_registry.register_builtin_component::<AudioSource>();
-        self.runtime_registry.register_builtin_component::<CursorInteractable>();
-        self.runtime_registry.register_builtin_component::<MeshRenderer>();
+        self.runtime_registry
+            .register_builtin_component_factory::<Camera, _>(Camera::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<ActiveCamera, _>(|| ActiveCamera);
+        self.runtime_registry
+            .register_builtin_component_factory::<SpriteRenderer, _>(SpriteRenderer::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<Collider2D, _>(Collider2D::default);
+        self.runtime_registry.register_builtin_component_factory::<Canvas, _>(|| {
+            Canvas::new(CanvasSpace::Screen)
+        });
+        self.runtime_registry
+            .register_builtin_component_factory::<AudioListener, _>(AudioListener::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<AudioSource, _>(AudioSource::new2d);
+        self.runtime_registry
+            .register_builtin_component_factory::<CursorInteractable, _>(CursorInteractable::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<MeshRenderer, _>(|| {
+                MeshRenderer::new(runa_core::components::Mesh::cube(1.0))
+            });
         self.runtime_registry.register_builtin_component::<ObjectDefinitionInstance>();
-        self.runtime_registry.register_builtin_component::<PhysicsCollision>();
-        self.runtime_registry.register_builtin_component::<Tilemap>();
-        self.runtime_registry.register_builtin_component::<TilemapRenderer>();
+        self.runtime_registry
+            .register_builtin_component::<SerializedTypeStorage>();
+        self.runtime_registry
+            .register_builtin_component_factory::<PhysicsCollision, _>(PhysicsCollision::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<Tilemap, _>(|| {
+                let mut tilemap = Tilemap::centered(8, 8, USizeVec2::new(32, 32));
+                tilemap.add_layer(TilemapLayer::new("Base".to_string(), 8, 8));
+                tilemap
+            });
+        self.runtime_registry
+            .register_builtin_component_object_factory::<TilemapRenderer, _>(|object| {
+                let mut changed = false;
+                if !object.has_component::<Tilemap>() {
+                    let mut tilemap = Tilemap::centered(8, 8, USizeVec2::new(32, 32));
+                    tilemap.add_layer(TilemapLayer::new("Base".to_string(), 8, 8));
+                    object.add_component(tilemap);
+                    changed = true;
+                }
+                if !object.has_component::<TilemapRenderer>() {
+                    object.add_component(TilemapRenderer::new());
+                    changed = true;
+                }
+                changed
+            });
     }
 }
 

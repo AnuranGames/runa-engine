@@ -1,6 +1,7 @@
 use runa_asset::AudioAsset;
 use runa_core::components::{AudioSource, SpriteRenderer, Transform};
 use runa_core::glam::Vec3;
+use runa_core::SerializedFieldAccess;
 use runa_core::ocs::{Object, Script, ScriptContext};
 use std::sync::Arc;
 
@@ -13,6 +14,8 @@ impl SoundEmitter {
         Self { label }
     }
 }
+
+impl SerializedFieldAccess for SoundEmitter {}
 
 impl Script for SoundEmitter {
     fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {

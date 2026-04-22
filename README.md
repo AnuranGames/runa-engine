@@ -38,11 +38,12 @@ The runtime is code-first:
 ### Runtime
 
 - object/component world model
-- attachable script behaviors with `start()` and `update()`
+- attachable script behaviors with `start()`, `update()`, and `late_update()`
 - `ObjectId`-based lookup and simple queries
 - deferred world commands from scripts
 - archetype registration and spawning
 - type metadata registration for components and scripts
+- serialized field metadata for editor/tooling flows
 
 ### Rendering
 
@@ -179,7 +180,7 @@ impl Script for PlayerController {
 
 fn create_player() -> Object {
     Object::new("Player")
-        .with(Camera::new_ortho(320.0, 180.0, (1280, 720)))
+        .with(Camera::new_ortho(320.0, 180.0))
         .with(ActiveCamera)
         .with(SpriteRenderer::new(Some(load_image!("assets/art/player.png"))))
         .with(PlayerController::new())
@@ -212,9 +213,12 @@ Good practice in Runa:
 - use typed marker/data components instead of string tags
 - use `ObjectId` and queries for object communication
 
+Script fields intended for editor/runtime serialization can be exposed through public fields or `#[serialize_field]` on private fields when using the derive macros.
+
 ## Documentation
 
 - [Tutorial Index](docs/tutorials/README.md)
+- [Runtime And Editor Update Notes](docs/architecture/runtime-and-editor-update.md)
 - [Creating Your First App](docs/tutorials/getting-started/creating-your-first-app.md)
 - [Creating a 2D Game](docs/tutorials/getting-started/creating-a-2d-game.md)
 - [Creating a 3D Game](docs/tutorials/getting-started/creating-a-3d-game.md)

@@ -12,3 +12,4 @@ pub use runa_core::registry::{
     ArchetypeKey, ArchetypeMetadata, ArchetypeRegistry, RegisteredTypeKind, RegistrationSource,
     RunaArchetype, RunaComponentType, RunaScriptType, RuntimeRegistry, TypeMetadata, TypeRegistry,
 };
+pub use runa_core::{SerializedField, SerializedFieldAccess, SerializedFieldValue};

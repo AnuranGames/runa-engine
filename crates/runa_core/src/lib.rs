@@ -13,6 +13,7 @@ pub use registry::{
     ArchetypeKey, ArchetypeMetadata, ArchetypeRegistry, RegisteredTypeKind, RegistrationSource,
     RunaArchetype, RunaComponentType, RunaScriptType, RuntimeRegistry, TypeMetadata, TypeRegistry,
 };
+pub use components::{SerializedField, SerializedFieldAccess, SerializedFieldValue};
 
 pub mod input_system {
     pub use crate::input::center_window;

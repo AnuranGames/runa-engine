@@ -57,6 +57,7 @@ pub fn ensure_editor_bridge_files(project_root: &Path) -> Result<(), ProjectErro
     let proj_dir = project_root.join(".proj");
     fs::create_dir_all(&proj_dir)?;
     ensure_project_dependencies(project_root)?;
+    ensure_public_register_game_types(project_root)?;
 
     let place_objects_path = proj_dir.join("place_objects.rs");
     fs::write(
@@ -70,14 +71,25 @@ pub fn ensure_editor_bridge_files(project_root: &Path) -> Result<(), ProjectErro
     Ok(())
 }
 
-#[derive(Clone)]
-#[allow(dead_code)]
-struct AutoObjectSpec {
-    id: String,
-    name: String,
-    module_name: String,
-    include_path: String,
-    constructor_expr: String,
+fn ensure_public_register_game_types(project_root: &Path) -> Result<(), ProjectError> {
+    let main_rs_path = project_root.join("src").join("main.rs");
+    if !main_rs_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&main_rs_path)?;
+    if content.contains("pub fn register_game_types(") || !content.contains("fn register_game_types(")
+    {
+        return Ok(());
+    }
+
+    let updated = content.replacen(
+        "fn register_game_types(",
+        "pub fn register_game_types(",
+        1,
+    );
+    fs::write(main_rs_path, updated)?;
+    Ok(())
 }
 
 fn ensure_project_dependencies(project_root: &Path) -> Result<(), ProjectError> {
@@ -135,8 +147,7 @@ runa_engine = {{ path = "{runa_engine_path}" }}
     .replace("{project_name}", project_name)
 }
 
-fn generate_place_objects_rs(project_root: &Path) -> Result<String, ProjectError> {
-    let _auto_objects = collect_auto_objects(&project_root.join("src"))?;
+fn generate_place_objects_rs(_project_root: &Path) -> Result<String, ProjectError> {
     let mut content = String::from(
         r#"use runa_engine::runa_project::{
     AudioSourceAsset, CameraAsset, MeshPrimitiveAsset, MeshRendererAsset,
@@ -203,130 +214,31 @@ fn descriptor(id: &str, name: &str, category: &str) -> PlaceableObjectDescriptor
     Ok(content)
 }
 
-fn collect_auto_objects(src_dir: &Path) -> Result<Vec<AutoObjectSpec>, ProjectError> {
-    let mut objects = Vec::new();
-    if !src_dir.exists() {
-        return Ok(objects);
-    }
-
-    collect_auto_objects_recursive(src_dir, src_dir, &mut objects)?;
-    Ok(objects)
-}
-
-fn collect_auto_objects_recursive(
-    root: &Path,
-    current: &Path,
-    objects: &mut Vec<AutoObjectSpec>,
-) -> Result<(), ProjectError> {
-    for entry in fs::read_dir(current)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            if path.file_name().and_then(|value| value.to_str()) == Some("bin") {
-                continue;
-            }
-            collect_auto_objects_recursive(root, &path, objects)?;
-            continue;
-        }
-
-        if path.extension().and_then(|value| value.to_str()) != Some("rs") {
-            continue;
-        }
-
-        let file_name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default();
-        if matches!(file_name, "main.rs" | "lib.rs") {
-            continue;
-        }
-
-        let content = fs::read_to_string(&path)?;
-        let relative_path = path.strip_prefix(root).unwrap_or(&path);
-        for type_name in collect_script_type_names(&content) {
-            let Some(constructor_expr) = infer_constructor_expr(&content, &type_name) else {
-                continue;
-            };
-            let path_stem = normalize_relative_path(relative_path.with_extension(""));
-            let path_id = path_stem.replace('/', "-");
-            objects.push(AutoObjectSpec {
-                id: format!("script:{path_id}:{}", type_name.to_lowercase()),
-                name: type_name.clone(),
-                module_name: format!(
-                    "auto_{}_{}",
-                    sanitize_identifier(&path_id),
-                    sanitize_identifier(&type_name.to_lowercase())
-                ),
-                include_path: normalize_relative_path(
-                    Path::new("..").join("src").join(relative_path),
-                ),
-                constructor_expr: constructor_expr.replace("{type}", &type_name),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_script_type_names(content: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    for line in content.lines() {
-        let Some(after_impl) = line.split("impl Script for ").nth(1) else {
-            continue;
-        };
-        let name: String = after_impl
-            .chars()
-            .skip_while(|ch| ch.is_whitespace())
-            .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
-            .collect();
-        if !name.is_empty() && !names.contains(&name) {
-            names.push(name);
-        }
-    }
-    names
-}
-
-fn infer_constructor_expr(content: &str, type_name: &str) -> Option<String> {
-    let impl_block = format!("impl {type_name}");
-    if content.contains(&impl_block)
-        && (content.contains("pub fn new() -> Self") || content.contains("fn new() -> Self"))
-    {
-        return Some("{type}::new()".to_string());
-    }
-
-    if content.contains(&format!("impl Default for {type_name}")) {
-        return Some("{type}::default()".to_string());
-    }
-
-    None
-}
-
-fn sanitize_identifier(value: &str) -> String {
-    let mut result = String::new();
-    for ch in value.chars() {
-        if ch.is_ascii_alphanumeric() {
-            result.push(ch.to_ascii_lowercase());
-        } else if !result.ends_with('_') {
-            result.push('_');
-        }
-    }
-    result.trim_matches('_').to_string()
-}
-
 fn main_rs_template() -> &'static str {
-    r#"use runa_engine::runa_app::{RunaApp, RunaWindowConfig};
-use runa_engine::runa_project::{load_project, load_world_with_object_loader};
+    r#"use std::sync::Arc;
 
-#[path = "../.proj/place_objects.rs"]
-mod place_objects;
+use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    runa_project::{load_project, load_world_with_runtime_registry},
+    Engine,
+};
+
+pub fn register_game_types(_engine: &mut Engine) {
+    // Register your components, scripts, and archetypes here.
+}
 
 fn main() {
     let current_dir = std::env::current_dir().expect("Failed to get current directory");
     let project = load_project(&current_dir).expect("Failed to load .runaproj manifest");
-    let world = load_world_with_object_loader(project.startup_world_path(), |object_id| {
-        place_objects::spawn(object_id)
-    })
-    .expect("Failed to load startup world");
+
+    let mut engine = Engine::new();
+    register_game_types(&mut engine);
+
+    let mut world = load_world_with_runtime_registry(
+        project.startup_world_path(),
+        engine.runtime_registry(),
+    ).expect("Failed to load startup world");
+    world.set_runtime_registry(Arc::new(engine.runtime_registry().clone()));
 
     let config = RunaWindowConfig {
         title: project.manifest.name.clone(),
@@ -339,30 +251,96 @@ fn main() {
 }
 
 fn object_bridge_rs_template() -> &'static str {
-    r#"mod place_objects;
+    r#"#[path = "../src/main.rs"]
+mod game_main;
+
+use runa_engine::{
+    runa_core::registry::{RegisteredTypeKind, RegistrationSource},
+    runa_project::{
+        PlaceableObjectDescriptor, PlaceableObjectRecord, ProjectMetadataSnapshot,
+        ProjectRegisteredTypeKind, ProjectRegisteredTypeRecord, ProjectRegistrationSource,
+        WorldObjectAsset,
+    },
+    Engine,
+};
+
+fn project_metadata() -> ProjectMetadataSnapshot {
+    let mut engine = Engine::new();
+    game_main::register_game_types(&mut engine);
+
+    let registered_types = engine
+        .runtime_registry()
+        .types()
+        .registered_types()
+        .into_iter()
+        .map(|metadata| ProjectRegisteredTypeRecord {
+            type_name: metadata.type_name().to_string(),
+            kind: match metadata.kind() {
+                RegisteredTypeKind::Component => ProjectRegisteredTypeKind::Component,
+                RegisteredTypeKind::Script => ProjectRegisteredTypeKind::Script,
+            },
+            source: match metadata.source() {
+                RegistrationSource::BuiltIn => ProjectRegistrationSource::BuiltIn,
+                RegistrationSource::User => ProjectRegistrationSource::User,
+            },
+            editor_addable: engine
+                .runtime_registry()
+                .types()
+                .has_object_factory(metadata.type_id()),
+            default_fields: {
+                let mut object = runa_engine::runa_core::ocs::Object::new("Editor Preview");
+                if engine
+                    .runtime_registry()
+                    .add_type_to_object(&mut object, metadata.type_id())
+                {
+                    object
+                        .with_component_by_type_id(metadata.type_id(), |component| {
+                            component.serialized_fields()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                }
+            },
+        })
+        .collect();
+
+    let object_records = engine
+        .runtime_registry()
+        .archetypes()
+        .registered_user_archetypes()
+        .into_iter()
+        .filter_map(|archetype| {
+            let mut world = engine.create_world();
+            let object_id = engine.spawn_archetype_by_key(&mut world, archetype.key())?;
+            let object = world.get(object_id)?;
+            Some(PlaceableObjectRecord {
+                descriptor: PlaceableObjectDescriptor {
+                    id: archetype.key().as_str().to_string(),
+                    name: archetype.name().to_string(),
+                    category: "Archetypes".to_string(),
+                },
+                object: WorldObjectAsset::from_object(object),
+            })
+        })
+        .collect();
+
+    ProjectMetadataSnapshot {
+        object_records,
+        registered_types,
+    }
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() >= 2 && args[1] == "--list-objects" {
-        let content = ron::to_string(&place_objects::descriptors())
-            .expect("Failed to serialize placeable object descriptors");
-        println!("{content}");
-        return;
-    }
-    if args.len() >= 2 && args[1] == "--list-object-records" {
-        let content = ron::to_string(&place_objects::records())
-            .expect("Failed to serialize placeable object records");
-        println!("{content}");
-        return;
-    }
-    if args.len() >= 3 && args[1] == "--spawn-object" {
-        let object = place_objects::spawn(&args[2]).expect("Unknown object id");
-        let content = ron::to_string(&object).expect("Failed to serialize spawned object");
+    if args.len() >= 2 && args[1] == "--project-metadata" {
+        let content = ron::to_string(&project_metadata())
+            .expect("Failed to serialize project metadata");
         println!("{content}");
         return;
     }
 
-    panic!("runa_object_bridge expects --list-objects, --list-object-records, or --spawn-object <id>");
+    panic!("runa_object_bridge expects --project-metadata");
 }
 "#
 }
@@ -381,6 +359,8 @@ fn empty_object() -> WorldObjectAsset {
         active_camera: false,
         audio_source: None,
         physics_collision: None,
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -399,6 +379,8 @@ fn camera_object() -> WorldObjectAsset {
         active_camera: true,
         audio_source: None,
         physics_collision: None,
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -424,6 +406,8 @@ fn cube_object() -> WorldObjectAsset {
             size: [0.75, 0.75],
             enabled: true,
         }),
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -449,6 +433,8 @@ fn floor_object() -> WorldObjectAsset {
             size: [4.0, 4.0],
             enabled: true,
         }),
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -468,6 +454,8 @@ fn sprite_object() -> WorldObjectAsset {
         active_camera: false,
         audio_source: None,
         physics_collision: None,
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -493,6 +481,8 @@ fn tilemap_object() -> WorldObjectAsset {
         active_camera: false,
         audio_source: None,
         physics_collision: None,
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 
@@ -516,6 +506,8 @@ fn audio_source_object() -> WorldObjectAsset {
             max_distance: 100.0,
         }),
         physics_collision: None,
+        serialized_components: Vec::new(),
+        serialized_scripts: Vec::new(),
     }
 }
 "#

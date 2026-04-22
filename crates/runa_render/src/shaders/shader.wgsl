@@ -52,11 +52,8 @@ fn vs_main(
     let world_y = scaled_y + instance.position.y;
     let world_z = scaled_z + instance.position.z;
 
-    // === 4. Aspect correction for pixel-perfect rendering ===
-    let corrected_x = world_x * globals.aspect;
-
-    // === 5. Convert to clip space ===
-    out.clip_position = globals.view_proj * vec4<f32>(corrected_x, world_y, world_z, 1.0);
+    // === 4. Convert to clip space ===
+    out.clip_position = globals.view_proj * vec4<f32>(world_x, world_y, world_z, 1.0);
 
     // Base UVs from the vertex (0..1)
     var uv = vertex.tex_coords;

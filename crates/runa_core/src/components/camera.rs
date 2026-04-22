@@ -1,5 +1,7 @@
 use glam::{Mat4, Vec2, Vec3};
 
+use super::Transform;
+
 /// Camera projection type.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProjectionType {
@@ -44,18 +46,17 @@ impl Camera {
     /// # Arguments
     /// * `width` - Visible width
     /// * `height` - Visible height
-    /// * `viewport_size` - Render window size
-    pub fn new_ortho(width: f32, height: f32, viewport_size: (u32, u32)) -> Self {
+    pub fn new_ortho(width: f32, height: f32) -> Self {
         Self {
             position: Vec3::ZERO,
-            target: Vec3::Z,
+            target: Vec3::NEG_Z,
             up: Vec3::Y,
             projection: ProjectionType::Orthographic,
-            ortho_size: Vec2::new(width / 10.0, height / 10.0),
+            ortho_size: Vec2::new(width.max(f32::EPSILON), height.max(f32::EPSILON)),
             near: -1000.0,
             far: 1000.0,
             fov: 0.0, // Unused for orthographic projection
-            viewport_size,
+            viewport_size: (1, 1),
         }
     }
 
@@ -68,7 +69,6 @@ impl Camera {
     /// * `fov` - Field of view in radians
     /// * `near` - Near clipping plane
     /// * `far` - Far clipping plane
-    /// * `viewport_size` - Render window size
     pub fn new_perspective(
         position: Vec3,
         target: Vec3,
@@ -76,18 +76,17 @@ impl Camera {
         fov: f32,
         near: f32,
         far: f32,
-        viewport_size: (u32, u32),
     ) -> Self {
         Self {
             position,
             target,
             up,
             projection: ProjectionType::Perspective,
-            ortho_size: Vec2::ZERO, // Unused for perspective projection
+            ortho_size: Vec2::new(320.0, 180.0), // Useful fallback when switching to ortho in tools
             near,
             far,
             fov,
-            viewport_size,
+            viewport_size: (1, 1),
         }
     }
 
@@ -99,13 +98,48 @@ impl Camera {
         }
     }
 
+    pub fn resolved_with_transform(&self, transform: Option<&Transform>) -> Self {
+        let Some(transform) = transform else {
+            return *self;
+        };
+
+        let position = transform.position + transform.rotation * self.position;
+        let target = transform.position + transform.rotation * self.target;
+        let up = (transform.rotation * self.up).normalize_or_zero();
+
+        Self {
+            position,
+            target,
+            up: if up.length_squared() > 0.0 { up } else { Vec3::Y },
+            ..*self
+        }
+    }
+
+    pub fn forward(&self) -> Vec3 {
+        (self.target - self.position).normalize_or_zero()
+    }
+
+    pub fn ortho_visible_size(&self) -> Vec2 {
+        let viewport_width = self.viewport_size.0.max(1) as f32;
+        let viewport_height = self.viewport_size.1.max(1) as f32;
+        let base_width = self.ortho_size.x.max(f32::EPSILON);
+        let base_height = self.ortho_size.y.max(f32::EPSILON);
+        let base_aspect = base_width / base_height;
+        let viewport_aspect = viewport_width / viewport_height;
+
+        if viewport_aspect >= base_aspect {
+            Vec2::new(base_height * viewport_aspect, base_height)
+        } else {
+            Vec2::new(base_width, base_width / viewport_aspect.max(f32::EPSILON))
+        }
+    }
+
     /// Returns the orthographic projection matrix.
     fn ortho_matrix(&self) -> Mat4 {
-        let half_width = self.ortho_size.x * 0.5;
-        let half_height = self.ortho_size.y * 0.5;
-
-        // orthographic_rh_gl uses Z in the -1..1 NDC range
-        let proj = Mat4::orthographic_rh_gl(
+        let visible_size = self.ortho_visible_size();
+        let half_width = visible_size.x * 0.5;
+        let half_height = visible_size.y * 0.5;
+        let proj = Mat4::orthographic_rh(
             -half_width,
             half_width,
             -half_height,
@@ -113,8 +147,17 @@ impl Camera {
             self.near,
             self.far,
         );
-
-        let view = Mat4::from_translation(-self.position);
+        let target = if self.forward().length_squared() <= f32::EPSILON {
+            self.position + Vec3::NEG_Z
+        } else {
+            self.target
+        };
+        let up = if self.up.length_squared() <= f32::EPSILON {
+            Vec3::Y
+        } else {
+            self.up
+        };
+        let view = Mat4::look_at_rh(self.position, target, up);
 
         proj * view
     }
@@ -161,19 +204,11 @@ impl Camera {
         let ndc_x = (screen_x / viewport_width as f32) * 2.0 - 1.0;
         let ndc_y = 1.0 - (screen_y / viewport_height as f32) * 2.0;
 
-        // Orthographic camera path
-        let half_width = self.ortho_size.x * 0.5;
-        let half_height = self.ortho_size.y * 0.5;
+        let visible_size = self.ortho_visible_size();
+        let half_width = visible_size.x * 0.5;
+        let half_height = visible_size.y * 0.5;
 
-        // Match the aspect correction used in renderer.rs
-        // aspect = (virtual_size.x / virtual_size.y) / (window_width / window_height)
-        let virtual_aspect = self.ortho_size.x / self.ortho_size.y;
-        let window_aspect = viewport_width as f32 / viewport_height as f32;
-        let aspect_correction = virtual_aspect / window_aspect;
-
-        let corrected_ndc_x = ndc_x / aspect_correction;
-
-        let world_x = corrected_ndc_x * half_width + self.position.x;
+        let world_x = ndc_x * half_width + self.position.x;
         let world_y = ndc_y * half_height + self.position.y;
 
         Vec2::new(world_x, world_y)
@@ -189,7 +224,6 @@ impl Default for Camera {
             75.0_f32.to_radians(),
             0.1,
             1000.0,
-            (1280, 720),
         )
     }
 }

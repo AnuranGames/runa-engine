@@ -1,20 +1,23 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
-use runa_core::components::Camera;
-use runa_core::glam::Vec3;
+use runa_core::components::{Camera, ProjectionType};
+use runa_core::glam::{Vec2, Vec3};
 use winit::event::{DeviceEvent, ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window};
 
 pub struct EditorCameraController {
-    camera: Option<Camera>,
-    position: Vec3,
+    projection: ProjectionType,
+    ortho_center: Vec2,
+    ortho_view_height: f32,
+    perspective_position: Vec3,
     yaw: f32,
     pitch: f32,
     speed: f32,
-    fov: f32,
+    fov_degrees: f32,
     sensitivity: f32,
+    near: f32,
+    far: f32,
     look_active: bool,
     viewport_hovered: bool,
     pressed_keys: HashSet<KeyCode>,
@@ -23,24 +26,52 @@ pub struct EditorCameraController {
 impl EditorCameraController {
     pub fn new() -> Self {
         Self {
-            position: Vec3::new(0.0, 1.4, 6.0),
+            projection: ProjectionType::Orthographic,
+            ortho_center: Vec2::ZERO,
+            ortho_view_height: 18.0,
+            perspective_position: Vec3::new(0.0, 1.4, 6.0),
             yaw: 0.0,
             pitch: -0.24,
             speed: 4.0,
-            sensitivity: 1.,
+            fov_degrees: 75.0,
+            sensitivity: 1.0,
+            near: 0.1,
+            far: 1000.0,
             look_active: false,
             viewport_hovered: false,
             pressed_keys: HashSet::new(),
-            camera: None,
-            fov: 75.0_f32,
         }
+    }
+
+    pub fn projection(&self) -> ProjectionType {
+        self.projection
+    }
+
+    pub fn set_projection(&mut self, projection: ProjectionType) {
+        self.projection = projection;
+        if projection == ProjectionType::Orthographic {
+            self.look_active = false;
+            self.pressed_keys.clear();
+        }
+    }
+
+    pub fn is_orthographic(&self) -> bool {
+        self.projection == ProjectionType::Orthographic
+    }
+
+    pub fn is_perspective(&self) -> bool {
+        self.projection == ProjectionType::Perspective
     }
 
     pub fn set_viewport_hovered(&mut self, hovered: bool) {
         self.viewport_hovered = hovered;
     }
 
-    pub fn handle_window_event(&mut self, window: &Arc<Window>, event: &WindowEvent) -> bool {
+    pub fn handle_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
+        if !self.is_perspective() {
+            return false;
+        }
+
         match event {
             WindowEvent::KeyboardInput { event, .. } => self.handle_keyboard_input(event),
             WindowEvent::MouseInput {
@@ -57,18 +88,22 @@ impl EditorCameraController {
     }
 
     pub fn handle_device_event(&mut self, event: &DeviceEvent) {
-        if !self.look_active {
+        if !self.is_perspective() || !self.look_active {
             return;
         }
 
         if let DeviceEvent::MouseMotion { delta } = event {
-            self.yaw -= delta.0 as f32 * self.sensitivity / 100.;
-            self.pitch -= delta.1 as f32 * self.sensitivity / 100.;
+            self.yaw -= delta.0 as f32 * self.sensitivity / 100.0;
+            self.pitch -= delta.1 as f32 * self.sensitivity / 100.0;
             self.pitch = self.pitch.clamp(-1.5, 1.5);
         }
     }
 
     pub fn update(&mut self, dt: f32) {
+        if !self.is_perspective() {
+            return;
+        }
+
         let mut movement = Vec3::ZERO;
         let forward = self.forward();
         let right = self.right();
@@ -96,54 +131,123 @@ impl EditorCameraController {
             let speed = if self.pressed_keys.contains(&KeyCode::ShiftLeft)
                 || self.pressed_keys.contains(&KeyCode::ShiftRight)
             {
-                self.speed * 2.
+                self.speed * 2.0
             } else {
                 self.speed
             };
-            self.position += movement.normalize() * speed * dt;
+            self.perspective_position += movement.normalize() * speed * dt;
         }
     }
 
-    pub fn camera(&mut self, viewport_size: (u32, u32)) -> Camera {
-        self.camera = Some(Camera::new_perspective(
-            self.position,
-            self.position + self.forward(),
-            Vec3::Y,
-            self.fov.to_radians(),
-            0.1,
-            1000.0,
-            viewport_size,
-        ));
-        self.camera.unwrap()
+    pub fn camera(&self, viewport_size: (u32, u32)) -> Camera {
+        match self.projection {
+            ProjectionType::Orthographic => {
+                let aspect = viewport_size.0.max(1) as f32 / viewport_size.1.max(1) as f32;
+                let view_height = self.ortho_view_height.max(0.5);
+                let view_width = view_height * aspect;
+
+                Camera {
+                    position: Vec3::new(self.ortho_center.x, self.ortho_center.y, 0.0),
+                    target: Vec3::new(self.ortho_center.x, self.ortho_center.y, -1.0),
+                    up: Vec3::Y,
+                    projection: ProjectionType::Orthographic,
+                    ortho_size: Vec2::new(view_width, view_height),
+                    near: -1000.0,
+                    far: 1000.0,
+                    fov: 0.0,
+                    viewport_size,
+                }
+            }
+            ProjectionType::Perspective => {
+                let mut camera = Camera::new_perspective(
+                    self.perspective_position,
+                    self.perspective_position + self.forward(),
+                    Vec3::Y,
+                    self.fov_degrees.to_radians(),
+                    self.near,
+                    self.far,
+                );
+                camera.resize(viewport_size.0, viewport_size.1);
+                camera
+            }
+        }
     }
 
-    pub fn get_speed(&mut self) -> f32 {
+    pub fn pan(&mut self, delta: Vec2) {
+        if self.is_orthographic() {
+            self.ortho_center += delta;
+        }
+    }
+
+    pub fn set_center(&mut self, center: Vec2) {
+        if self.is_orthographic() {
+            self.ortho_center = center;
+        }
+    }
+
+    pub fn get_zoom(&self) -> f32 {
+        self.ortho_view_height
+    }
+
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.ortho_view_height = zoom.clamp(1.0, 500.0);
+    }
+
+    pub fn zoom_by_factor(&mut self, factor: f32) {
+        self.set_zoom(self.ortho_view_height * factor);
+    }
+
+    pub fn get_fov(&self) -> f32 {
+        self.fov_degrees
+    }
+
+    pub fn set_fov(&mut self, degrees: f32) {
+        self.fov_degrees = degrees.clamp(20.0, 130.0);
+    }
+
+    pub fn get_speed(&self) -> f32 {
         self.speed
     }
 
-    pub fn set_speed(&mut self, new_speed: f32) {
-        self.speed = new_speed;
+    pub fn set_speed(&mut self, speed: f32) {
+        self.speed = speed.max(0.01);
     }
 
-    pub fn get_sensitivity(&mut self) -> f32 {
+    pub fn get_sensitivity(&self) -> f32 {
         self.sensitivity
     }
 
-    pub fn set_sensitivity(&mut self, new_sens: f32) {
-        self.sensitivity = new_sens;
+    pub fn set_sensitivity(&mut self, sensitivity: f32) {
+        self.sensitivity = sensitivity.max(0.01);
     }
 
-    /// Return radians
-    pub fn get_fov(&mut self) -> f32 {
-        self.fov
+    pub fn near(&self) -> f32 {
+        self.near
     }
 
-    /// In radians
-    pub fn set_fov(&mut self, new_fov: f32) {
-        self.fov = new_fov;
+    pub fn set_near(&mut self, near: f32) {
+        self.near = near.clamp(0.001, self.far - 0.001);
     }
 
-    pub fn shutdown(&mut self, window: &Arc<Window>) {
+    pub fn far(&self) -> f32 {
+        self.far
+    }
+
+    pub fn set_far(&mut self, far: f32) {
+        self.far = far.max(self.near + 0.001);
+    }
+
+    pub fn frame_2d(&mut self, center: Vec2, view_height: f32) {
+        self.ortho_center = center;
+        self.ortho_view_height = view_height.clamp(1.0, 500.0);
+    }
+
+    pub fn frame_3d(&mut self, target: Vec3, distance: f32) {
+        let distance = distance.max(1.0);
+        self.perspective_position = target - self.forward() * distance;
+    }
+
+    pub fn shutdown(&mut self, window: &Window) {
         self.set_look_active(window, false);
     }
 
@@ -171,7 +275,13 @@ impl EditorCameraController {
         self.look_active
     }
 
-    fn set_look_active(&mut self, window: &Arc<Window>, active: bool) {
+    fn set_look_active(&mut self, window: &Window, active: bool) {
+        if !self.is_perspective() {
+            self.look_active = false;
+            self.pressed_keys.clear();
+            return;
+        }
+
         self.look_active = active;
         if !active {
             self.pressed_keys.clear();

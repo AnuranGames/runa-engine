@@ -4,6 +4,7 @@ mod content_browser;
 mod editor_app;
 mod editor_camera;
 mod editor_settings;
+mod editor_textures;
 mod inspector;
 mod style;
 

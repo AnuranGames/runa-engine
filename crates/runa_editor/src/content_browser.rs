@@ -3,9 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use egui::{Color32, ColorImage, RichText, TextureHandle, Ui, Vec2};
+use egui::{Color32, RichText, TextureHandle, Ui, Vec2};
 use rfd::FileDialog;
 
+use crate::editor_textures::load_editor_icon;
 use crate::editor_settings::EditorSettings;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,7 @@ impl ContentEntry {
 
 struct ContentBrowserIcons {
     folder: TextureHandle,
+    folder_empty: TextureHandle,
     folder_open: TextureHandle,
     file: TextureHandle,
     rust_file: TextureHandle,
@@ -127,11 +129,16 @@ impl ContentBrowserState {
         self.current_dir.display().to_string()
     }
 
+    pub fn import_into_current_dir(&mut self, settings: &EditorSettings) {
+        let target_dir = self.current_dir.clone();
+        self.import_assets_into(&target_dir, settings);
+    }
+
     pub fn ui(&mut self, ui: &mut Ui, settings: &EditorSettings) {
         self.ensure_icons(ui.ctx());
         self.handle_shortcuts(ui);
 
-        let available = ui.available_size();
+        let available = ui.available_size() - egui::vec2(0.0, 6.0);
         ui.allocate_ui_with_layout(available, egui::Layout::top_down(egui::Align::Min), |ui| {
             let handle_width = 8.0;
             let min_sidebar = 180.0;
@@ -150,6 +157,32 @@ impl ContentBrowserState {
                             .id_salt("folder_tree_scroll")
                             .show(ui, |ui| {
                                 ui.set_min_width(ui.available_width());
+                                let root_name = self
+                                    .project_root
+                                    .file_name()
+                                    .map(|name| name.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| self.project_root.display().to_string());
+                                let root_selected = self.current_dir == self.project_root;
+                                let icons = self.icons.as_ref().expect("icons must be initialized");
+                                let root_is_empty =
+                                    is_directory_empty(&self.project_root, settings.show_hidden_files);
+                                let root_icon = if root_is_empty {
+                                    icons.folder_empty.clone()
+                                } else {
+                                    icons.folder_open.clone()
+                                };
+                                let project_root = self.project_root.clone();
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::Image::new(&root_icon)
+                                            .fit_to_exact_size(egui::vec2(18.0, 18.0))
+                                            .sense(egui::Sense::hover()),
+                                    );
+                                    if ui.selectable_label(root_selected, root_name).clicked() {
+                                        self.open_dir(project_root.clone(), settings);
+                                    }
+                                });
+                                ui.separator();
                                 let root = self.project_root.clone();
                                 let mut next_dir = None;
                                 self.folder_tree_ui(ui, &root, 0, settings, &mut next_dir);
@@ -158,13 +191,16 @@ impl ContentBrowserState {
                                 }
                             });
 
-                        let blank_response = ui.allocate_response(
-                            egui::vec2(ui.available_width(), ui.available_height().max(24.0)),
-                            egui::Sense::click(),
-                        );
-                        blank_response.context_menu(|ui| {
-                            self.folder_area_context_menu(ui, settings);
-                        });
+                        let remaining_height = ui.available_height().max(0.0);
+                        if remaining_height > 0.0 {
+                            let blank_response = ui.allocate_response(
+                                egui::vec2(ui.available_width(), remaining_height),
+                                egui::Sense::click(),
+                            );
+                            blank_response.context_menu(|ui| {
+                                self.folder_area_context_menu(ui, settings);
+                            });
+                        }
                     },
                 );
 
@@ -213,6 +249,7 @@ impl ContentBrowserState {
                 );
             });
         });
+        ui.add_space(4.0);
 
         if let Some(dir) = self.pending_open_dir.take() {
             self.open_dir(dir, settings);
@@ -294,7 +331,7 @@ impl ContentBrowserState {
             Color32::WHITE
         };
 
-        let icon = self.icon_for(entry);
+        let icon = self.icon_for(entry, settings);
         child.add(
             egui::Image::new(icon)
                 .fit_to_exact_size(Vec2::splat(settings.content_icon_size))
@@ -555,9 +592,12 @@ impl ContentBrowserState {
             let selected = self.current_dir == directory;
             let expanded = self.expanded_dirs.contains(&directory);
             let has_children = has_visible_subdirectories(&directory, settings.show_hidden_files);
+            let is_empty = is_directory_empty(&directory, settings.show_hidden_files);
             let icons = self.icons.as_ref().expect("icons must be initialized");
-            let folder_icon = if expanded {
+            let folder_icon = if expanded && has_children {
                 icons.folder_open.clone()
+            } else if is_empty {
+                icons.folder_empty.clone()
             } else {
                 icons.folder.clone()
             };
@@ -567,17 +607,18 @@ impl ContentBrowserState {
                 let folder_response = ui.add(
                     egui::Image::new(&folder_icon)
                         .fit_to_exact_size(egui::vec2(18.0, 18.0))
-                        .sense(if has_children {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        }),
+                        .sense(egui::Sense::click()),
                 );
-                if has_children && folder_response.clicked() {
-                    if expanded {
-                        self.expanded_dirs.remove(&directory);
+                if folder_response.clicked() {
+                    if has_children {
+                        if expanded {
+                            self.expanded_dirs.remove(&directory);
+                        } else {
+                            self.expanded_dirs.insert(directory.clone());
+                        }
                     } else {
-                        self.expanded_dirs.insert(directory.clone());
+                        self.ensure_directory_expanded(&directory);
+                        *next_dir = Some(directory.clone());
                     }
                 }
 
@@ -803,9 +844,9 @@ impl ContentBrowserState {
             .set_directory(target_dir)
             .add_filter(
                 "Supported assets",
-                &["png", "jpg", "jpeg", "ogg", "wav", "ron", "rs", "wgsl"],
+                &["png", "jpg", "jpeg", "svg", "ogg", "wav", "ron", "rs", "wgsl"],
             )
-            .add_filter("Images", &["png", "jpg", "jpeg"])
+            .add_filter("Images", &["png", "jpg", "jpeg", "svg"])
             .add_filter("Audio", &["ogg", "wav"])
             .add_filter("Code", &["rs", "wgsl"])
             .add_filter("Worlds", &["ron"])
@@ -868,48 +909,31 @@ impl ContentBrowserState {
         }
 
         self.icons = Some(ContentBrowserIcons {
-            folder: load_png_texture(
+            folder: load_editor_icon(ctx, "content_browser_folder_icon", "folder"),
+            folder_empty: load_editor_icon(
                 ctx,
-                "content_browser_folder_icon",
-                include_bytes!("../assets/icons/folder.png"),
+                "content_browser_folder_empty_icon",
+                "folder-empty",
             ),
-            folder_open: load_png_texture(
-                ctx,
-                "content_browser_folder_open_icon",
-                include_bytes!("../assets/icons/folder-open.png"),
-            ),
-            file: load_png_texture(
-                ctx,
-                "content_browser_file_icon",
-                include_bytes!("../assets/icons/file.png"),
-            ),
-            rust_file: load_png_texture(
-                ctx,
-                "content_browser_rust_file_icon",
-                include_bytes!("../assets/icons/rust-file.png"),
-            ),
-            image_file: load_png_texture(
-                ctx,
-                "content_browser_image_file_icon",
-                include_bytes!("../assets/icons/image.png"),
-            ),
-            audio_file: load_png_texture(
-                ctx,
-                "content_browser_audio_file_icon",
-                include_bytes!("../assets/icons/audio.png"),
-            ),
-            shader_file: load_png_texture(
-                ctx,
-                "content_browser_shader_file_icon",
-                include_bytes!("../assets/icons/wgsl.png"),
-            ),
+            folder_open: load_editor_icon(ctx, "content_browser_folder_open_icon", "folder-open"),
+            file: load_editor_icon(ctx, "content_browser_file_icon", "file"),
+            rust_file: load_editor_icon(ctx, "content_browser_rust_file_icon", "rust-file"),
+            image_file: load_editor_icon(ctx, "content_browser_image_file_icon", "image"),
+            audio_file: load_editor_icon(ctx, "content_browser_audio_file_icon", "audio"),
+            shader_file: load_editor_icon(ctx, "content_browser_shader_file_icon", "wgsl"),
         });
     }
 
-    fn icon_for(&self, entry: &ContentEntry) -> &TextureHandle {
+    fn icon_for(&self, entry: &ContentEntry, settings: &EditorSettings) -> &TextureHandle {
         let icons = self.icons.as_ref().expect("icons must be initialized");
         match entry.kind {
-            AssetKind::Directory => &icons.folder,
+            AssetKind::Directory => {
+                if is_directory_empty(&entry.full_path, settings.show_hidden_files) {
+                    &icons.folder_empty
+                } else {
+                    &icons.folder
+                }
+            }
             AssetKind::RustFile => &icons.rust_file,
             AssetKind::ImageFile => &icons.image_file,
             AssetKind::AudioFile => &icons.audio_file,
@@ -1015,6 +1039,17 @@ fn has_visible_subdirectories(path: &Path, show_hidden_files: bool) -> bool {
     })
 }
 
+fn is_directory_empty(path: &Path, show_hidden_files: bool) -> bool {
+    let Ok(read_dir) = fs::read_dir(path) else {
+        return true;
+    };
+
+    !read_dir
+        .flatten()
+        .map(|entry| entry.path())
+        .any(|path| !is_ignored_path(&path, show_hidden_files))
+}
+
 fn classify_asset_kind(path: &Path) -> AssetKind {
     if path.is_dir() {
         return AssetKind::Directory;
@@ -1027,7 +1062,7 @@ fn classify_asset_kind(path: &Path) -> AssetKind {
         .as_deref()
     {
         Some("rs") => AssetKind::RustFile,
-        Some("png" | "jpg" | "jpeg") => AssetKind::ImageFile,
+        Some("png" | "jpg" | "jpeg" | "svg") => AssetKind::ImageFile,
         Some("ogg" | "wav" | "mp3") => AssetKind::AudioFile,
         Some("wgsl") => AssetKind::ShaderFile,
         _ => AssetKind::GenericFile,
@@ -1045,16 +1080,6 @@ fn is_ignored_path(path: &Path, show_hidden_files: bool) -> bool {
         }
     }
     false
-}
-
-fn load_png_texture(ctx: &egui::Context, name: &str, bytes: &[u8]) -> TextureHandle {
-    let image = image::load_from_memory(bytes)
-        .expect("failed to decode png")
-        .to_rgba8();
-    let size = [image.width() as usize, image.height() as usize];
-    let pixels = image.into_raw();
-    let color_image = ColorImage::from_rgba_unmultiplied(size, &pixels);
-    ctx.load_texture(name, color_image, egui::TextureOptions::LINEAR)
 }
 
 fn copy_directory_recursive(source: &Path, destination: &Path) -> std::io::Result<()> {
@@ -1127,10 +1152,12 @@ fn object_script_template(type_name: &str) -> String {
             chars
         })
         .collect::<String>();
+    let archetype_name = format!("{type_name}Archetype");
 
     format!(
-        "use runa_engine::{{\n    runa_core::{{\n        components::Transform,\n        ocs::{{Object, Script, ScriptContext}},\n        Vec3,\n    }},\n}};\n\npub struct {type_name} {{\n    speed: f32,\n    direction: Vec3,\n}}\n\nimpl {type_name} {{\n    pub fn new() -> Self {{\n        Self {{\n            speed: 1.0,\n            direction: Vec3::ZERO,\n        }}\n    }}\n}}\n\nimpl Script for {type_name} {{\n    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {{\n        let _ = (&self.speed, &self.direction, dt);\n\n        if let Some(transform) = ctx.get_component_mut::<Transform>() {{\n            let _ = transform;\n        }}\n    }}\n}}\n\npub fn create_{type_name_snake}() -> Object {{\n    Object::new(\"{type_name}\")\n        .with({type_name}::new())\n}}\n",
+        "use runa_engine::{{\n    runa_core::{{\n        components::Transform,\n        ocs::{{Object, Script, ScriptContext, World}},\n        Vec3,\n    }},\n    RunaArchetype,\n    RunaScript,\n}};\n\n#[derive(RunaScript)]\npub struct {type_name} {{\n    #[serialize_field]\n    speed: f32,\n    #[serialize_field]\n    direction: Vec3,\n}}\n\nimpl {type_name} {{\n    pub fn new() -> Self {{\n        Self {{\n            speed: 1.0,\n            direction: Vec3::ZERO,\n        }}\n    }}\n}}\n\nimpl Script for {type_name} {{\n    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {{\n        let _ = (&self.speed, &self.direction, dt);\n\n        if let Some(transform) = ctx.get_component_mut::<Transform>() {{\n            let _ = transform;\n        }}\n    }}\n}}\n\npub fn create_{type_name_snake}() -> Object {{\n    Object::new(\"{type_name}\")\n        .with({type_name}::new())\n}}\n\n#[derive(RunaArchetype)]\n#[runa(name = \"{type_name_snake}\")]\npub struct {archetype_name};\n\nimpl {archetype_name} {{\n    pub fn create(world: &mut World) -> u64 {{\n        world.spawn(create_{type_name_snake}())\n    }}\n}}\n",
         type_name_snake = type_name_snake,
+        archetype_name = archetype_name,
     )
 }
 

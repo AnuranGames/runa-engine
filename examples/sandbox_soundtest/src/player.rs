@@ -3,6 +3,7 @@ use runa_core::{
     components::{ActiveCamera, AudioListener, Camera, SpriteRenderer, Transform},
     glam::Vec3,
     input_system::*,
+    SerializedFieldAccess,
     ocs::{Object, Script, ScriptContext, World},
 };
 use runa_engine::RunaArchetype;
@@ -15,11 +16,13 @@ pub struct Player {
 impl Player {
     pub fn new() -> Self {
         Self {
-            speed: 0.25,
+            speed: 6.0,
             direction: Vec3::ZERO,
         }
     }
 }
+
+impl SerializedFieldAccess for Player {}
 
 impl Script for Player {
     fn start(&mut self, ctx: &mut ScriptContext) {
@@ -29,7 +32,7 @@ impl Script for Player {
         }
     }
 
-    fn update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+    fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         self.direction = Vec3::ZERO;
         if Input::is_key_pressed(KeyCode::KeyW) {
             self.direction.y = 1.0;
@@ -45,7 +48,7 @@ impl Script for Player {
         }
 
         if let Some(transform) = ctx.get_component_mut::<Transform>() {
-            transform.position += self.direction.normalize_or_zero() * self.speed;
+            transform.position += self.direction.normalize_or_zero() * self.speed * dt;
         }
     }
 }
@@ -53,7 +56,7 @@ impl Script for Player {
 pub fn create_player() -> Object {
     Object::new("Player")
         .with(AudioListener::new())
-        .with(Camera::new_ortho(320.0, 180.0, (1280, 720)))
+        .with(Camera::new_ortho(320.0, 180.0))
         .with(ActiveCamera)
         .with(SpriteRenderer {
             texture: Some(load_image!("assets/art/Charactert.png")),

@@ -63,6 +63,42 @@ pub struct App<'window> {
 }
 
 impl<'window> App<'window> {
+    fn resolved_camera_for_object_with_interpolation(
+        &self,
+        object_id: runa_core::ocs::ObjectId,
+        interpolation_factor: f32,
+    ) -> Option<Camera> {
+        let object = self.world.get(object_id)?;
+        let camera = object.get_component::<Camera>()?;
+        let transform = object.get_component::<runa_core::components::Transform>();
+
+        if let Some(transform) = transform {
+            let interpolated_position = glam::Vec3::lerp(
+                transform.previous_position,
+                transform.position,
+                interpolation_factor,
+            );
+            let interpolated_rotation = transform.previous_rotation
+                + (transform.rotation - transform.previous_rotation) * interpolation_factor;
+            let interpolated_transform = runa_core::components::Transform {
+                position: interpolated_position,
+                rotation: interpolated_rotation,
+                scale: transform.scale,
+                previous_position: transform.previous_position,
+                previous_rotation: transform.previous_rotation,
+            };
+            Some(camera.resolved_with_transform(Some(&interpolated_transform)))
+        } else {
+            Some(*camera)
+        }
+    }
+
+    fn resolved_camera_for_object(&self, object_id: runa_core::ocs::ObjectId) -> Option<Camera> {
+        let object = self.world.get(object_id)?;
+        let camera = object.get_component::<Camera>()?;
+        Some(camera.resolved_with_transform(object.get_component()))
+    }
+
     fn active_camera_id(&self) -> Option<runa_core::ocs::ObjectId> {
         self.world
             .query::<runa_core::components::ActiveCamera>()
@@ -82,21 +118,20 @@ impl<'window> App<'window> {
     }
 
     fn render(&mut self) {
-        let ortho_size = if self.active_camera_set {
+        let interpolation_factor = (self.accumulator / (1.0 / 60.0)).min(1.0);
+        let active_camera = if self.active_camera_set {
             self.active_camera_id()
-                .and_then(|id| self.world.get(id))
-                .and_then(|object| object.get_component::<Camera>())
-                .map(|camera| camera.ortho_size)
-                .unwrap_or(self.camera.ortho_size)
+                .and_then(|id| {
+                    self.resolved_camera_for_object_with_interpolation(id, interpolation_factor)
+                })
+                .unwrap_or(self.camera)
         } else {
-            self.camera.ortho_size
+            self.camera
         };
 
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
             // Clear queue
             self.queue.clear();
-
-            let interpolation_factor = (self.accumulator / (1.0 / 60.0)).min(1.0);
 
             // Compile render commands from world
             self.world.render(&mut self.queue, interpolation_factor);
@@ -107,10 +142,22 @@ impl<'window> App<'window> {
             // Rendering - use 3D matrix if available, otherwise use 2D camera matrix
             let camera_matrix = self
                 .camera_matrix_override
-                .unwrap_or_else(|| self.camera.matrix());
+                .unwrap_or_else(|| active_camera.matrix());
+
+            let virtual_size = if matches!(
+                active_camera.projection,
+                runa_core::components::ProjectionType::Perspective
+            ) {
+                glam::Vec2::new(
+                    renderer.surface_config.width.max(1) as f32,
+                    renderer.surface_config.height.max(1) as f32,
+                )
+            } else {
+                active_camera.ortho_size
+            };
 
             // Get ortho_size from active camera if available, otherwise use default camera
-            renderer.draw(&self.queue, camera_matrix, ortho_size);
+            renderer.draw(&self.queue, camera_matrix, virtual_size);
 
             // Update FPS
             self.frame_count += 1;
@@ -143,11 +190,20 @@ impl<'window> App<'window> {
         self.active_camera_set = false;
 
         if let Some(camera_id) = self.active_camera_id() {
-            if let Some(camera) = self
-                .world
-                .get(camera_id)
-                .and_then(|object| object.get_component::<Camera>())
-            {
+            if let Some(renderer) = &self.renderer {
+                let w = renderer.surface_config.width.max(1);
+                let h = renderer.surface_config.height.max(1);
+                if let Some(camera) = self
+                    .world
+                    .get_mut(camera_id)
+                    .and_then(|object| object.get_component_mut::<Camera>())
+                {
+                    camera.viewport_size = (w, h);
+                }
+            }
+
+            if let Some(camera) = self.resolved_camera_for_object(camera_id) {
+                self.camera = camera;
                 self.camera_matrix_override = Some(camera.matrix());
                 self.active_camera_set = self
                     .world
@@ -155,17 +211,6 @@ impl<'window> App<'window> {
                     .and_then(|object| object.get_component::<ActiveCamera>())
                     .is_some();
 
-                if let Some(renderer) = &self.renderer {
-                    let w = renderer.surface_config.width.max(1);
-                    let h = renderer.surface_config.height.max(1);
-                    if let Some(camera) = self
-                        .world
-                        .get_mut(camera_id)
-                        .and_then(|object| object.get_component_mut::<Camera>())
-                    {
-                        camera.viewport_size = (w, h);
-                    }
-                }
                 return;
             }
         }
@@ -259,9 +304,7 @@ impl<'window> ApplicationHandler for App<'window> {
                 // Use active camera from world if available, otherwise use default camera
                 let camera_to_use = if self.active_camera_set {
                     self.active_camera_id()
-                        .and_then(|id| self.world.get(id))
-                        .and_then(|object| object.get_component::<Camera>())
-                        .cloned()
+                        .and_then(|id| self.resolved_camera_for_object(id))
                         .unwrap_or(self.camera)
                 } else {
                     self.camera
@@ -300,9 +343,8 @@ impl<'window> ApplicationHandler for App<'window> {
                 event_loop.exit();
             }
             WindowEvent::Resized(new_size) => {
-                if let (Some(wgpu_ctx), Some(window)) =
-                    (self.renderer.as_mut(), self.window.as_ref())
-                {
+                let had_window = self.window.is_some();
+                if let Some(wgpu_ctx) = self.renderer.as_mut() {
                     wgpu_ctx.resize((new_size.width, new_size.height));
                     self.camera.resize(new_size.width, new_size.height);
                     self.config.width = new_size.width;
@@ -313,7 +355,12 @@ impl<'window> ApplicationHandler for App<'window> {
                         runa_core::input_system::is_fullscreen().unwrap_or(self.config.fullscreen),
                         (new_size.width, new_size.height),
                     );
-                    window.request_redraw();
+                    self.sync_camera();
+                }
+                if had_window {
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {

@@ -17,6 +17,7 @@ Current lifecycle:
 
 1. `start()`
 2. `update()`
+3. `late_update()`
 
 ## Basic Script
 
@@ -37,6 +38,37 @@ impl Script for MoveRight {
     fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         if let Some(transform) = ctx.get_component_mut::<Transform>() {
             transform.position.x += self.speed * dt;
+        }
+    }
+}
+```
+
+## Late Update
+
+Use `late_update()` for behavior that must read the final state after all normal script updates in the current tick.
+
+Typical examples:
+
+- camera follow
+- look-at helpers
+- post-movement attachments
+
+```rust
+impl Script for CameraFollow {
+    fn late_update(&mut self, ctx: &mut ScriptContext, _dt: f32) {
+        let Some(target_id) = ctx.find_first_with::<PlayerTag>() else {
+            return;
+        };
+        let Some(target_position) = ctx
+            .get_object(target_id)
+            .and_then(|object| object.get_component::<Transform>())
+            .map(|transform| transform.position)
+        else {
+            return;
+        };
+
+        if let Some(transform) = ctx.get_component_mut::<Transform>() {
+            transform.position = target_position;
         }
     }
 }
@@ -118,6 +150,31 @@ That does not auto-register the script. It only gives you explicit bootstrap hel
 EnemyAI::register(&mut engine);
 ```
 
+## Serialized Fields
+
+The derive macros can expose editor/tooling-visible fields from scripts.
+
+- public fields are serialized by default
+- private fields can be exposed with `#[serialize_field]`
+
+```rust
+use runa_engine::RunaScript;
+
+#[derive(RunaScript)]
+pub struct EnemyAI {
+    pub speed: f32,
+    #[serialize_field]
+    aggro_radius: f32,
+    hidden_runtime_state: bool,
+}
+```
+
+In this example:
+
+- `speed` is exposed
+- `aggro_radius` is exposed
+- `hidden_runtime_state` stays runtime-only
+
 ## Migration Summary
 
 - move object assembly out of scripts
@@ -125,3 +182,4 @@ EnemyAI::register(&mut engine);
 - attach behavior with `.with(MyScript::new())`
 - use `ctx.commands()` for world mutations
 - use `ctx.world()` / `ctx.find_first_with::<T>()` for simple queries
+- use `late_update()` for follow/attachment behavior that depends on final per-tick positions
