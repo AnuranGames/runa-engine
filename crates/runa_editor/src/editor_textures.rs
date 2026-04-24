@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use egui::{ColorImage, Id, TextureHandle};
 use resvg::{tiny_skia, usvg};
@@ -7,16 +7,23 @@ use resvg::{tiny_skia, usvg};
 const EDITOR_ICON_RASTER_SIZE: u32 = 64;
 const COMPONENT_ICON_RASTER_SIZE: u32 = 96;
 
-pub fn load_editor_icon(ctx: &egui::Context, texture_name: &str, icon_name: &str) -> TextureHandle {
-    let icon_path = resolve_editor_icon_path(icon_name).unwrap_or_else(|| {
-        panic!(
-            "failed to find editor icon `{icon_name}` as SVG or PNG in {}",
-            editor_icon_directory().display()
-        )
-    });
+struct EmbeddedIcon {
+    bytes: &'static [u8],
+    extension: &'static str,
+}
 
-    load_cached_texture(ctx, texture_name, &icon_path, Some(EDITOR_ICON_RASTER_SIZE))
-        .unwrap_or_else(|error| panic!("failed to load editor icon `{icon_name}`: {error}"))
+pub fn load_editor_icon(ctx: &egui::Context, texture_name: &str, icon_name: &str) -> TextureHandle {
+    let icon = embedded_editor_icon(icon_name)
+        .unwrap_or_else(|| panic!("failed to find embedded editor icon `{icon_name}`"));
+
+    load_cached_embedded_texture(
+        ctx,
+        texture_name,
+        icon_name,
+        icon,
+        Some(EDITOR_ICON_RASTER_SIZE),
+    )
+    .unwrap_or_else(|error| panic!("failed to load editor icon `{icon_name}`: {error}"))
 }
 
 pub fn load_component_icon(
@@ -24,31 +31,20 @@ pub fn load_component_icon(
     texture_name: &str,
     component_icon_name: &str,
 ) -> TextureHandle {
-    let icon_path = resolve_component_icon_path(component_icon_name)
-        .or_else(|| resolve_component_icon_path("c-Object"))
+    let (resolved_name, icon) = embedded_component_icon(component_icon_name)
+        .map(|icon| (component_icon_name, icon))
+        .or_else(|| embedded_component_icon("c-Object").map(|icon| ("c-Object", icon)))
         .unwrap_or_else(|| {
-            panic!(
-                "failed to find component icon `{component_icon_name}` or fallback `c-Object` as SVG or PNG in {}",
-                component_icon_directory().display()
-            )
+            panic!("failed to find embedded component icon `{component_icon_name}` or fallback `c-Object`")
         });
 
-    load_cached_texture(
+    load_cached_embedded_texture(
         ctx,
         texture_name,
-        &icon_path,
+        resolved_name,
+        icon,
         Some(COMPONENT_ICON_RASTER_SIZE),
     )
-    .or_else(|_| {
-        let fallback = resolve_component_icon_path("c-Object")
-            .ok_or_else(|| "fallback component icon `c-Object` is missing".to_string())?;
-        load_cached_texture(
-            ctx,
-            "component_icon_fallback_c_object",
-            &fallback,
-            Some(COMPONENT_ICON_RASTER_SIZE),
-        )
-    })
     .unwrap_or_else(|error| {
         panic!("failed to load component icon `{component_icon_name}`: {error}")
     })
@@ -80,64 +76,183 @@ pub fn load_texture_from_path(
     }
 }
 
-fn resolve_editor_icon_path(icon_name: &str) -> Option<PathBuf> {
-    let icon_dir = editor_icon_directory();
-    let svg = icon_dir.join(format!("{icon_name}.svg"));
-    if svg.exists() {
-        return Some(svg);
-    }
-
-    let png = icon_dir.join(format!("{icon_name}.png"));
-    if png.exists() {
-        return Some(png);
-    }
-
-    None
-}
-
-fn resolve_component_icon_path(icon_name: &str) -> Option<PathBuf> {
-    let icon_dir = component_icon_directory();
-    let png = icon_dir.join(format!("{icon_name}.png"));
-    if png.exists() {
-        return Some(png);
-    }
-
-    let svg = icon_dir.join(format!("{icon_name}.svg"));
-    if svg.exists() {
-        return Some(svg);
-    }
-
-    None
-}
-
-fn editor_icon_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("icons")
-}
-
-fn component_icon_directory() -> PathBuf {
-    editor_icon_directory().join("components")
-}
-
-fn load_cached_texture(
+fn load_cached_embedded_texture(
     ctx: &egui::Context,
     texture_name: &str,
-    path: &Path,
+    icon_name: &str,
+    icon: EmbeddedIcon,
     raster_size: Option<u32>,
 ) -> Result<TextureHandle, String> {
-    let cache_id = Id::new((
-        "editor_texture_cache",
-        texture_name,
-        path.to_string_lossy().to_string(),
-    ));
+    let cache_id = Id::new(("embedded_editor_texture_cache", texture_name, icon_name));
     if let Some(texture) = ctx.data_mut(|data| data.get_temp::<TextureHandle>(cache_id)) {
         return Ok(texture);
     }
 
-    let texture = load_texture_from_path(ctx, texture_name, path, raster_size)?;
+    let texture = match icon.extension {
+        "svg" => load_svg_texture(
+            ctx,
+            texture_name,
+            icon.bytes,
+            raster_size.unwrap_or(EDITOR_ICON_RASTER_SIZE),
+        ),
+        _ => load_raster_texture(ctx, texture_name, icon.bytes),
+    }?;
     ctx.data_mut(|data| data.insert_temp(cache_id, texture.clone()));
     Ok(texture)
+}
+
+fn embedded_editor_icon(icon_name: &str) -> Option<EmbeddedIcon> {
+    let icon = match icon_name {
+        "audio" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/audio.svg"),
+            extension: "svg",
+        },
+        "camera" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/camera.svg"),
+            extension: "svg",
+        },
+        "cross-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/cross-icon.svg"),
+            extension: "svg",
+        },
+        "edit-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/edit-icon.svg"),
+            extension: "svg",
+        },
+        "file" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/file.svg"),
+            extension: "svg",
+        },
+        "folder-empty" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/folder-empty.svg"),
+            extension: "svg",
+        },
+        "folder-open" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/folder-open.svg"),
+            extension: "svg",
+        },
+        "folder" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/folder.svg"),
+            extension: "svg",
+        },
+        "image" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/image.svg"),
+            extension: "svg",
+        },
+        "question-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/question-icon.svg"),
+            extension: "svg",
+        },
+        "rust-file" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/rust-file.svg"),
+            extension: "svg",
+        },
+        "wgsl" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/wgsl.svg"),
+            extension: "svg",
+        },
+        "world" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/world.svg"),
+            extension: "svg",
+        },
+        _ => return None,
+    };
+    Some(icon)
+}
+
+fn embedded_component_icon(icon_name: &str) -> Option<EmbeddedIcon> {
+    let icon = match icon_name {
+        "c-ActiveCamera" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-ActiveCamera.png"),
+            extension: "png",
+        },
+        "c-AudioListener" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-AudioListener.png"),
+            extension: "png",
+        },
+        "c-AudioSource" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-AudioSource.png"),
+            extension: "png",
+        },
+        "c-Camera" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Camera.png"),
+            extension: "png",
+        },
+        "c-Canvas" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Canvas.png"),
+            extension: "png",
+        },
+        "c-Collider" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Collider.png"),
+            extension: "png",
+        },
+        "c-Collider2D" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Collider2D.png"),
+            extension: "png",
+        },
+        "c-CursorInteractable" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-CursorInteractable.png"),
+            extension: "png",
+        },
+        "c-MeshRenderer" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-MeshRenderer.png"),
+            extension: "png",
+        },
+        "c-Object" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Object.png"),
+            extension: "png",
+        },
+        "c-PhysicsCollision" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-PhysicsCollision.png"),
+            extension: "png",
+        },
+        "c-Script" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Script.png"),
+            extension: "png",
+        },
+        "c-Sorting" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Sorting.png"),
+            extension: "png",
+        },
+        "c-SpriteAnimator" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-SpriteAnimator.png"),
+            extension: "png",
+        },
+        "c-SpriteRenderer" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-SpriteRenderer.png"),
+            extension: "png",
+        },
+        "c-TilemapRenderer" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-TilemapRenderer.png"),
+            extension: "png",
+        },
+        "c-Transform" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-Transform.png"),
+            extension: "png",
+        },
+        "c-UiImage" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-UiImage.png"),
+            extension: "png",
+        },
+        "c-UiText" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-UiText.png"),
+            extension: "png",
+        },
+        "cross-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/cross-icon.png"),
+            extension: "png",
+        },
+        "edit-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/edit-icon.png"),
+            extension: "png",
+        },
+        "question-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/question-icon.png"),
+            extension: "png",
+        },
+        _ => return None,
+    };
+    Some(icon)
 }
 
 fn load_raster_texture(

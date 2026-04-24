@@ -25,19 +25,32 @@ impl<'window> EditorApp<'window> {
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("New World").clicked() {
+                    let project_open = self.project_session.is_some();
+                    if ui
+                        .add_enabled(project_open, egui::Button::new("New World"))
+                        .clicked()
+                    {
                         self.new_world();
                         ui.close();
                     }
-                    if ui.button("Open World...").clicked() {
+                    if ui
+                        .add_enabled(project_open, egui::Button::new("Open World..."))
+                        .clicked()
+                    {
                         self.open_world_dialog();
                         ui.close();
                     }
-                    if ui.button("Save World").clicked() {
+                    if ui
+                        .add_enabled(project_open, egui::Button::new("Save World"))
+                        .clicked()
+                    {
                         self.save_current_world();
                         ui.close();
                     }
-                    if ui.button("Save World As...").clicked() {
+                    if ui
+                        .add_enabled(project_open, egui::Button::new("Save World As..."))
+                        .clicked()
+                    {
                         self.save_world_as_dialog();
                         ui.close();
                     }
@@ -114,6 +127,13 @@ impl<'window> EditorApp<'window> {
                 });
             });
         });
+
+        if self.project_session.is_none() {
+            self.welcome_screen(ctx);
+            self.project_dialog_window(ctx);
+            self.project_loading_overlay(ctx);
+            return;
+        }
 
         egui::Panel::bottom("status_bar")
             .resizable(false)
@@ -427,6 +447,60 @@ impl<'window> EditorApp<'window> {
         self.build_settings_window(ctx);
         self.project_dialog_window(ctx);
         self.project_loading_overlay(ctx);
+    }
+
+    fn welcome_screen(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(style::VIEWPORT_BACKGROUND))
+            .show(ctx, |ui| {
+                ui.with_layout(
+                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                    |ui| {
+                        egui::Frame::new()
+                            .fill(ui.visuals().panel_fill)
+                            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+                            .corner_radius(egui::CornerRadius::same(
+                                style::spacing::CORNER_RADIUS,
+                            ))
+                            .inner_margin(egui::Margin::same(28))
+                            .show(ui, |ui| {
+                                ui.set_width(420.0);
+                                ui.vertical_centered(|ui| {
+                                    ui.heading("Welcome to Runa Editor");
+                                    ui.add_space(8.0);
+                                    ui.label("Open an existing project or create a new one to start editing.");
+                                    ui.add_space(22.0);
+
+                                    if ui
+                                        .add_sized(
+                                            [260.0, 34.0],
+                                            egui::Button::new("Open Project..."),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.open_project_dialog();
+                                    }
+                                    ui.add_space(8.0);
+                                    if ui
+                                        .add_sized(
+                                            [260.0, 34.0],
+                                            egui::Button::new("Create New Project..."),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.project_dialog.open = true;
+                                    }
+
+                                    if self.project_load.is_some() {
+                                        ui.add_space(16.0);
+                                        ui.spinner();
+                                        ui.label("Loading project...");
+                                    }
+                                });
+                            });
+                    },
+                );
+            });
     }
 
     pub(super) fn render_frame(&mut self) {

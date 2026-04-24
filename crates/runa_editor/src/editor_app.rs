@@ -33,11 +33,10 @@ use runa_core::World;
 use runa_engine::Engine;
 use runa_project::{
     create_empty_project, create_empty_world, ensure_editor_bridge_files,
-    ensure_release_windows_subsystem, find_project_manifest, load_project,
-    load_world_with_runtime_registry, save_world, AudioSourceAsset, PlaceableObjectDescriptor,
-    PlaceableObjectRecord, ProjectMetadataSnapshot, ProjectPaths, ProjectRegisteredTypeKind,
-    ProjectRegisteredTypeRecord, SpriteRendererAsset, TilemapAsset, TilemapLayerAsset,
-    TransformAsset, WorldObjectAsset,
+    ensure_release_windows_subsystem, load_project, load_world_with_runtime_registry, save_world,
+    AudioSourceAsset, PlaceableObjectDescriptor, PlaceableObjectRecord, ProjectMetadataSnapshot,
+    ProjectPaths, ProjectRegisteredTypeKind, ProjectRegisteredTypeRecord, SpriteRendererAsset,
+    TilemapAsset, TilemapLayerAsset, TransformAsset, WorldObjectAsset,
 };
 use runa_render::{RenderTarget, Renderer};
 use runa_render_api::RenderQueue;
@@ -234,7 +233,7 @@ impl<'window> EditorApp<'window> {
             build_settings_open: false,
             project_dialog,
             project_session: None,
-            startup_project_path: project_path.or_else(|| find_project_manifest(&startup_root)),
+            startup_project_path: project_path,
             runtime_process: None,
             build_process: None,
             project_load: None,
@@ -249,7 +248,9 @@ impl<'window> EditorApp<'window> {
             world,
             scene_queue: RenderQueue::new(),
             selection,
-            content_browser: ContentBrowserState::new(startup_root),
+            content_browser: ContentBrowserState::new(
+                dirs::document_dir().unwrap_or_else(|| startup_root.clone()),
+            ),
             panels: PanelState::default(),
             editor_camera: EditorCameraController::new(),
             viewport_target: None,

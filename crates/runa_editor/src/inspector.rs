@@ -898,6 +898,64 @@ fn components_section(
         );
     }
 
+    if let Some(collider) = object.get_component_mut::<Collider2D>() {
+        component_block(
+            ui,
+            "Collider2D",
+            true,
+            actions,
+            TypeId::of::<Collider2D>(),
+            ComponentRuntimeKind::Component,
+            None,
+            None,
+            editor_settings,
+            |ui| {
+                bool_row(ui, "Enabled", &mut collider.enabled);
+                bool_row(ui, "Is Trigger", &mut collider.is_trigger);
+                property_row(ui, "Half Size", |ui| {
+                    ui.add_sized(
+                        [78.0, 22.0],
+                        egui::DragValue::new(&mut collider.half_size.x)
+                            .range(0.0..=100000.0)
+                            .speed(0.05),
+                    );
+                    ui.add_sized(
+                        [78.0, 22.0],
+                        egui::DragValue::new(&mut collider.half_size.y)
+                            .range(0.0..=100000.0)
+                            .speed(0.05),
+                    );
+                });
+                property_row(ui, "Size", |ui| {
+                    let mut width = collider.half_size.x * 2.0;
+                    let mut height = collider.half_size.y * 2.0;
+                    let width_changed = ui
+                        .add_sized(
+                            [78.0, 22.0],
+                            egui::DragValue::new(&mut width)
+                                .range(0.0..=200000.0)
+                                .speed(0.1),
+                        )
+                        .changed();
+                    let height_changed = ui
+                        .add_sized(
+                            [78.0, 22.0],
+                            egui::DragValue::new(&mut height)
+                                .range(0.0..=200000.0)
+                                .speed(0.1),
+                        )
+                        .changed();
+                    if width_changed {
+                        collider.half_size.x = (width * 0.5).max(0.0);
+                    }
+                    if height_changed {
+                        collider.half_size.y = (height * 0.5).max(0.0);
+                    }
+                });
+            },
+        );
+    }
+
     if let Some(collision) = object.get_component_mut::<PhysicsCollision>() {
         component_block(
             ui,
@@ -1696,6 +1754,8 @@ pub(crate) fn component_docs_url(type_id: TypeId) -> Option<&'static str> {
         )
     } else if type_id == TypeId::of::<CursorInteractable>() {
         Some("https://github.com/RunaGameEngine/runa/blob/main/docs/tutorials/components/cursor-interactable.md")
+    } else if type_id == TypeId::of::<Collider2D>() {
+        Some("https://github.com/RunaGameEngine/runa/blob/main/docs/tutorials/components/physics-collision.md")
     } else if type_id == TypeId::of::<PhysicsCollision>() {
         Some("https://github.com/RunaGameEngine/runa/blob/main/docs/tutorials/components/physics-collision.md")
     } else {

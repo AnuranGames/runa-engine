@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use runa_asset::{AudioAsset, Handle, TextureAsset};
 use runa_core::components::{
-    ActiveCamera, AudioSource, Camera, Mesh, MeshRenderer, ObjectDefinitionInstance,
+    ActiveCamera, AudioSource, Camera, Collider2D, Mesh, MeshRenderer, ObjectDefinitionInstance,
     PhysicsCollision, ProjectionType, SerializedField, SerializedTypeEntry, SerializedTypeKind,
     SerializedTypeStorage, Sorting, SpriteAnimationClip, SpriteAnimator, SpriteRenderer,
     SpriteSheet, Tilemap, TilemapLayer, TilemapRenderer, Transform, DEFAULT_SPRITE_PIXELS_PER_UNIT,
@@ -37,6 +37,8 @@ pub struct WorldObjectAsset {
     pub camera: Option<CameraAsset>,
     pub active_camera: bool,
     pub audio_source: Option<AudioSourceAsset>,
+    #[serde(default)]
+    pub collider2d: Option<Collider2DAsset>,
     pub physics_collision: Option<PhysicsCollisionAsset>,
     pub serialized_components: Vec<SerializedObjectTypeAsset>,
     pub serialized_scripts: Vec<SerializedObjectTypeAsset>,
@@ -229,6 +231,14 @@ pub struct PhysicsCollisionAsset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Collider2DAsset {
+    pub half_size: [f32; 2],
+    pub enabled: bool,
+    #[serde(default)]
+    pub is_trigger: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TilemapAsset {
     pub width: u32,
     pub height: u32,
@@ -410,6 +420,9 @@ impl WorldObjectAsset {
             audio_source: object
                 .get_component::<AudioSource>()
                 .map(AudioSourceAsset::from_component),
+            collider2d: object
+                .get_component::<Collider2D>()
+                .map(Collider2DAsset::from_component),
             physics_collision: object
                 .get_component::<PhysicsCollision>()
                 .map(PhysicsCollisionAsset::from_component),
@@ -442,6 +455,7 @@ impl WorldObjectAsset {
             camera,
             active_camera,
             audio_source,
+            collider2d,
             physics_collision,
             serialized_components,
             serialized_scripts,
@@ -467,6 +481,7 @@ impl WorldObjectAsset {
                             camera,
                             active_camera,
                             audio_source,
+                            collider2d,
                             physics_collision,
                             serialized_components,
                             serialized_scripts,
@@ -491,6 +506,7 @@ impl WorldObjectAsset {
             camera,
             active_camera,
             audio_source,
+            collider2d,
             physics_collision,
             serialized_components,
             serialized_scripts,
@@ -538,6 +554,9 @@ impl WorldObjectAsset {
                 if self.audio_source.is_some() {
                     spawned.audio_source = self.audio_source;
                 }
+                if self.collider2d.is_some() {
+                    spawned.collider2d = self.collider2d;
+                }
                 if self.physics_collision.is_some() {
                     spawned.physics_collision = self.physics_collision;
                 }
@@ -569,6 +588,7 @@ fn apply_asset_overrides_to_object(
     camera: Option<CameraAsset>,
     active_camera: bool,
     audio_source: Option<AudioSourceAsset>,
+    collider2d: Option<Collider2DAsset>,
     physics_collision: Option<PhysicsCollisionAsset>,
     serialized_components: Vec<SerializedObjectTypeAsset>,
     serialized_scripts: Vec<SerializedObjectTypeAsset>,
@@ -619,6 +639,10 @@ fn apply_asset_overrides_to_object(
     if let Some(audio_source) = audio_source {
         let _ = object.remove_component_type_id(TypeId::of::<AudioSource>());
         object.add_component(audio_source.into_component(project_root));
+    }
+    if let Some(collider2d) = collider2d {
+        let _ = object.remove_component_type_id(TypeId::of::<Collider2D>());
+        object.add_component(collider2d.into_component());
     }
     if let Some(physics_collision) = physics_collision {
         let _ = object.remove_component_type_id(TypeId::of::<PhysicsCollision>());
@@ -844,6 +868,7 @@ fn is_builtin_serialized_type(type_id: std::any::TypeId) -> bool {
         TypeId::of::<Camera>(),
         TypeId::of::<ActiveCamera>(),
         TypeId::of::<AudioSource>(),
+        TypeId::of::<Collider2D>(),
         TypeId::of::<PhysicsCollision>(),
         TypeId::of::<ObjectDefinitionInstance>(),
         TypeId::of::<SerializedTypeStorage>(),
@@ -1055,6 +1080,24 @@ impl PhysicsCollisionAsset {
         PhysicsCollision {
             size: Vec2::from_array(self.size),
             enabled: self.enabled,
+        }
+    }
+}
+
+impl Collider2DAsset {
+    fn from_component(collider: &Collider2D) -> Self {
+        Self {
+            half_size: collider.half_size.to_array(),
+            enabled: collider.enabled,
+            is_trigger: collider.is_trigger,
+        }
+    }
+
+    fn into_component(self) -> Collider2D {
+        Collider2D {
+            half_size: Vec2::from_array(self.half_size),
+            enabled: self.enabled,
+            is_trigger: self.is_trigger,
         }
     }
 }
@@ -1364,6 +1407,7 @@ mod tests {
             camera: None,
             active_camera: false,
             audio_source: None,
+            collider2d: None,
             physics_collision: None,
             serialized_components: Vec::new(),
             serialized_scripts: Vec::new(),
@@ -1399,6 +1443,7 @@ mod tests {
             camera: None,
             active_camera: false,
             audio_source: None,
+            collider2d: None,
             physics_collision: None,
             serialized_components: Vec::new(),
             serialized_scripts: vec![SerializedObjectTypeAsset {
@@ -1438,6 +1483,7 @@ mod tests {
             camera: None,
             active_camera: false,
             audio_source: None,
+            collider2d: None,
             physics_collision: None,
             serialized_components: Vec::new(),
             serialized_scripts: vec![SerializedObjectTypeAsset {
