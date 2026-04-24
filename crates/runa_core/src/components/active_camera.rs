@@ -4,7 +4,7 @@
 /// The object should also have either Camera2D or Camera3D component.
 ///
 /// # Example
-/// ```
+/// ```rust,ignore
 /// // In your camera script's construct:
 /// object.add_component(Camera3D { ... });
 /// object.add_component(ActiveCamera);

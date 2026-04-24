@@ -72,7 +72,11 @@ impl TypeRegistry {
         &mut self,
         type_name: &'static str,
     ) -> TypeMetadata {
-        self.register_named::<T>(RegisteredTypeKind::Component, RegistrationSource::User, type_name)
+        self.register_named::<T>(
+            RegisteredTypeKind::Component,
+            RegistrationSource::User,
+            type_name,
+        )
     }
 
     pub fn register_component_named_factory<T, F>(
@@ -115,7 +119,11 @@ impl TypeRegistry {
         &mut self,
         type_name: &'static str,
     ) -> TypeMetadata {
-        self.register_named::<T>(RegisteredTypeKind::Script, RegistrationSource::User, type_name)
+        self.register_named::<T>(
+            RegisteredTypeKind::Script,
+            RegistrationSource::User,
+            type_name,
+        )
     }
 
     pub fn register_script_named_factory<T, F>(
@@ -249,7 +257,8 @@ impl TypeRegistry {
             source,
         };
 
-        self.types_by_name.insert(metadata.type_name, metadata.type_id);
+        self.types_by_name
+            .insert(metadata.type_name, metadata.type_id);
         self.types_by_id.insert(
             metadata.type_id,
             TypeRegistration {

@@ -17,6 +17,12 @@ impl RotatingCube {
     }
 }
 
+impl Default for RotatingCube {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Script for RotatingCube {
     fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         if let Some(transform) = ctx.get_component_mut::<Transform>() {

@@ -1,5 +1,6 @@
 use crate::components::{Collider2D, Component, Transform};
 use crate::ocs::{ScriptContext, World};
+use crate::registry::RuntimeRegistry;
 use glam::Vec2;
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -97,6 +98,10 @@ impl Object {
         } else {
             Some(unsafe { &*self.world_ptr })
         }
+    }
+
+    pub fn runtime_registry(&self) -> Option<&RuntimeRegistry> {
+        self.get_world().and_then(|world| world.runtime_registry())
     }
 
     /// Add a component to the object. Only one component of a given type is allowed.

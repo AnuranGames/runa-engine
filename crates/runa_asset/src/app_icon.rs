@@ -9,9 +9,12 @@ use winit::window::Icon;
 /// - Channels: RGBA (with alpha)
 ///
 /// # Example
-/// ```rust
+/// ```rust,no_run
+/// use runa_asset::load_window_icon;
+///
 /// let icon = load_window_icon("assets/icon.png")?;
-/// window.set_window_icon(Some(icon));
+/// # let _ = icon;
+/// # Ok::<(), String>(())
 /// ```
 pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
     let path = path.as_ref();
@@ -46,14 +49,17 @@ pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
 /// Loads multiple icon sizes (recommended for cross-platform support).
 ///
 /// # Example
-/// ```rust
+/// ```rust,no_run
+/// use runa_asset::load_window_icons;
+///
 /// let icons = load_window_icons(&[
 ///     "assets/icon_16.png",
 ///     "assets/icon_32.png",
 ///     "assets/icon_64.png",
 ///     "assets/icon_256.png",
 /// ])?;
-/// window.set_window_icon(icons.first().cloned()); // winit uses the first compatible icon
+/// # let _ = icons.first().cloned();
+/// # Ok::<(), String>(())
 /// ```
 
 #[allow(dead_code)]

@@ -54,8 +54,15 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
         self.egui_state = Some(egui_state);
         let mut fonts = egui::FontDefinitions::default();
         if let Ok(data) = std::fs::read(r"C:\Windows\Fonts\arialbd.ttf") {
-            fonts.font_data.insert("arial_bold".to_owned(), egui::FontData::from_owned(data).into());
-            fonts.families.entry(egui::FontFamily::Name("Arial Bold".into())).or_default().insert(0, "arial_bold".to_owned());
+            fonts.font_data.insert(
+                "arial_bold".to_owned(),
+                egui::FontData::from_owned(data).into(),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Name("Arial Bold".into()))
+                .or_default()
+                .insert(0, "arial_bold".to_owned());
         }
         self.egui_ctx.set_fonts(fonts);
         style::apply_editor_style(&self.egui_ctx);

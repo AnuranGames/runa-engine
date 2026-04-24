@@ -8,7 +8,7 @@ use crate::{
     audio::{AudioEngine, SoundId},
     components::{
         ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D, MeshRenderer,
-        SpriteRenderer, Tilemap, Transform,
+        Sorting, SpriteAnimator, SpriteRenderer, Tilemap, Transform,
     },
     debug_renderer::DebugRenderer,
     ocs::{Object, ObjectId, Script},
@@ -131,6 +131,7 @@ impl World {
         }
         self.processing_lifecycle = false;
         self.apply_commands();
+        self.update_sprite_animators(dt);
 
         // Find active AudioListener and update listener position
         let mut listener_found = false;
@@ -272,7 +273,16 @@ impl World {
                     transform.interpolated_rotation(interpolation_factor),
                     // Reuse the third scale channel to carry sprite PPU into the
                     // renderer without changing the public render command shape.
-                    Vec3::new(transform.scale.x, transform.scale.y, sprite.pixels_per_unit()),
+                    Vec3::new(
+                        transform.scale.x,
+                        transform.scale.y,
+                        sprite.pixels_per_unit(),
+                    ),
+                    sprite.uv_rect,
+                    object
+                        .get_component::<Sorting>()
+                        .map(|sorting| sorting.order)
+                        .unwrap_or(0),
                 );
             }
 
@@ -298,13 +308,14 @@ impl World {
 
                                 // Tile world position relative to the object
                                 let world_pos = tilemap.tile_to_world(x, y);
-                                let final_pos =
-                                    transform.interpolated_position(interpolation_factor) + world_pos;
+                                let final_pos = transform
+                                    .interpolated_position(interpolation_factor)
+                                    + world_pos;
 
                                 render_queue.draw_tile(
                                     tile.texture.clone().unwrap(),
                                     final_pos,
-                                    tilemap.tile_size,
+                                    tilemap.world_tile_size(),
                                     [
                                         tile.uv_rect.x,
                                         tile.uv_rect.y,
@@ -314,6 +325,10 @@ impl World {
                                     tile.flip_x,
                                     tile.flip_y,
                                     [1.0, 1.0, 1.0, 1.0],
+                                    object
+                                        .get_component::<Sorting>()
+                                        .map(|sorting| sorting.order)
+                                        .unwrap_or(0),
                                 );
                             }
                         }
@@ -336,6 +351,21 @@ impl World {
 
     pub fn set_debug_draw_collisions(&mut self, enabled: bool) {
         self.debug_renderer.set_debug_draw_collisions(enabled);
+    }
+
+    fn update_sprite_animators(&mut self, dt: f32) {
+        for object in &mut self.objects {
+            let Some(uv_rect) = object
+                .get_component_mut::<SpriteAnimator>()
+                .map(|animator| animator.tick(dt))
+            else {
+                continue;
+            };
+
+            if let Some(sprite) = object.get_component_mut::<SpriteRenderer>() {
+                sprite.set_uv_rect(uv_rect);
+            }
+        }
     }
 
     pub fn is_debug_draw_collisions_enabled(&self) -> bool {
@@ -362,6 +392,14 @@ impl World {
         self.objects
             .iter_mut()
             .find(|object| object.id() == Some(id))
+    }
+
+    pub fn take_object(&mut self, id: ObjectId) -> Option<Object> {
+        if self.processing_lifecycle {
+            return None;
+        }
+
+        self.despawn_immediate(id)
     }
 
     pub fn find_first_with<T: 'static>(&self) -> Option<ObjectId> {

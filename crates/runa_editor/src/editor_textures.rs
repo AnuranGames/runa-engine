@@ -7,11 +7,7 @@ use resvg::{tiny_skia, usvg};
 const EDITOR_ICON_RASTER_SIZE: u32 = 64;
 const COMPONENT_ICON_RASTER_SIZE: u32 = 96;
 
-pub fn load_editor_icon(
-    ctx: &egui::Context,
-    texture_name: &str,
-    icon_name: &str,
-) -> TextureHandle {
+pub fn load_editor_icon(ctx: &egui::Context, texture_name: &str, icon_name: &str) -> TextureHandle {
     let icon_path = resolve_editor_icon_path(icon_name).unwrap_or_else(|| {
         panic!(
             "failed to find editor icon `{icon_name}` as SVG or PNG in {}",
@@ -19,12 +15,7 @@ pub fn load_editor_icon(
         )
     });
 
-    load_cached_texture(
-        ctx,
-        texture_name,
-        &icon_path,
-        Some(EDITOR_ICON_RASTER_SIZE),
-    )
+    load_cached_texture(ctx, texture_name, &icon_path, Some(EDITOR_ICON_RASTER_SIZE))
         .unwrap_or_else(|error| panic!("failed to load editor icon `{icon_name}`: {error}"))
 }
 
@@ -33,12 +24,14 @@ pub fn load_component_icon(
     texture_name: &str,
     component_icon_name: &str,
 ) -> TextureHandle {
-    let icon_path = resolve_component_icon_path(component_icon_name).unwrap_or_else(|| {
-        panic!(
-            "failed to find component icon `{component_icon_name}` as SVG or PNG in {}",
-            component_icon_directory().display()
-        )
-    });
+    let icon_path = resolve_component_icon_path(component_icon_name)
+        .or_else(|| resolve_component_icon_path("c-Object"))
+        .unwrap_or_else(|| {
+            panic!(
+                "failed to find component icon `{component_icon_name}` or fallback `c-Object` as SVG or PNG in {}",
+                component_icon_directory().display()
+            )
+        });
 
     load_cached_texture(
         ctx,
@@ -46,6 +39,16 @@ pub fn load_component_icon(
         &icon_path,
         Some(COMPONENT_ICON_RASTER_SIZE),
     )
+    .or_else(|_| {
+        let fallback = resolve_component_icon_path("c-Object")
+            .ok_or_else(|| "fallback component icon `c-Object` is missing".to_string())?;
+        load_cached_texture(
+            ctx,
+            "component_icon_fallback_c_object",
+            &fallback,
+            Some(COMPONENT_ICON_RASTER_SIZE),
+        )
+    })
     .unwrap_or_else(|error| {
         panic!("failed to load component icon `{component_icon_name}`: {error}")
     })
@@ -94,21 +97,23 @@ fn resolve_editor_icon_path(icon_name: &str) -> Option<PathBuf> {
 
 fn resolve_component_icon_path(icon_name: &str) -> Option<PathBuf> {
     let icon_dir = component_icon_directory();
-    let svg = icon_dir.join(format!("{icon_name}.svg"));
-    if svg.exists() {
-        return Some(svg);
-    }
-
     let png = icon_dir.join(format!("{icon_name}.png"));
     if png.exists() {
         return Some(png);
+    }
+
+    let svg = icon_dir.join(format!("{icon_name}.svg"));
+    if svg.exists() {
+        return Some(svg);
     }
 
     None
 }
 
 fn editor_icon_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("icons")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("icons")
 }
 
 fn component_icon_directory() -> PathBuf {
@@ -121,7 +126,11 @@ fn load_cached_texture(
     path: &Path,
     raster_size: Option<u32>,
 ) -> Result<TextureHandle, String> {
-    let cache_id = Id::new(("editor_texture_cache", texture_name));
+    let cache_id = Id::new((
+        "editor_texture_cache",
+        texture_name,
+        path.to_string_lossy().to_string(),
+    ));
     if let Some(texture) = ctx.data_mut(|data| data.get_temp::<TextureHandle>(cache_id)) {
         return Ok(texture);
     }

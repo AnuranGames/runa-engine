@@ -6,8 +6,8 @@ use std::process::Command;
 use egui::{Color32, RichText, TextureHandle, Ui, Vec2};
 use rfd::FileDialog;
 
-use crate::editor_textures::load_editor_icon;
 use crate::editor_settings::EditorSettings;
+use crate::editor_textures::load_editor_icon;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AssetKind {
@@ -164,8 +164,10 @@ impl ContentBrowserState {
                                     .unwrap_or_else(|| self.project_root.display().to_string());
                                 let root_selected = self.current_dir == self.project_root;
                                 let icons = self.icons.as_ref().expect("icons must be initialized");
-                                let root_is_empty =
-                                    is_directory_empty(&self.project_root, settings.show_hidden_files);
+                                let root_is_empty = is_directory_empty(
+                                    &self.project_root,
+                                    settings.show_hidden_files,
+                                );
                                 let root_icon = if root_is_empty {
                                     icons.folder_empty.clone()
                                 } else {
@@ -821,7 +823,9 @@ impl ContentBrowserState {
             .set_directory(target_dir)
             .add_filter(
                 "Supported assets",
-                &["png", "jpg", "jpeg", "svg", "ogg", "wav", "ron", "rs", "wgsl"],
+                &[
+                    "png", "jpg", "jpeg", "svg", "ogg", "wav", "ron", "rs", "wgsl",
+                ],
             )
             .add_filter("Images", &["png", "jpg", "jpeg", "svg"])
             .add_filter("Audio", &["ogg", "wav"])
@@ -1162,6 +1166,12 @@ impl {type_name} {{
     }}
 }}
 
+impl Default for {type_name} {{
+    fn default() -> Self {{
+        Self::new()
+    }}
+}}
+
 impl Script for {type_name} {{
     fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {{
         let movement = self.direction.normalize_or_zero() * self.speed * dt;
@@ -1198,4 +1208,3 @@ fn object_archetype_template(type_name: &str) -> String {
 fn wgsl_shader_template() -> &'static str {
     "@group(0) @binding(0)\nvar<uniform> globals: mat4x4<f32>;\n\nstruct VertexInput {\n    @location(0) position: vec3<f32>,\n    @location(1) uv: vec2<f32>,\n};\n\nstruct VertexOutput {\n    @builtin(position) clip_position: vec4<f32>,\n    @location(0) uv: vec2<f32>,\n};\n\n@vertex\nfn vs_main(input: VertexInput) -> VertexOutput {\n    var out: VertexOutput;\n    out.clip_position = globals * vec4<f32>(input.position, 1.0);\n    out.uv = input.uv;\n    return out;\n}\n\n@fragment\nfn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {\n    return vec4<f32>(input.uv, 0.5, 1.0);\n}\n"
 }
-

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::command::{UiRect, Vertex3D};
 use crate::RenderCommands;
-use glam::{Mat4, Quat, USizeVec2, Vec2, Vec3};
+use glam::{Mat4, Quat, Vec2, Vec3};
 use runa_asset::TextureAsset;
 
 #[derive(Default)]
@@ -23,12 +23,16 @@ impl RenderQueue {
         position: Vec3,
         rotation: Quat,
         scale: Vec3,
+        uv_rect: [f32; 4],
+        order: i32,
     ) {
         self.commands.push(RenderCommands::Sprite {
             texture,
             position,
             rotation,
             scale,
+            uv_rect,
+            order,
         });
     }
 
@@ -45,11 +49,12 @@ impl RenderQueue {
         &mut self,
         texture: Arc<TextureAsset>,
         position: Vec3,
-        size: USizeVec2,
+        size: Vec2,
         uv_rect: [f32; 4],
         flip_x: bool,
         flip_y: bool,
         color: [f32; 4],
+        order: i32,
     ) {
         self.commands.push(RenderCommands::Tile {
             texture,
@@ -59,6 +64,7 @@ impl RenderQueue {
             flip_x,
             flip_y,
             color,
+            order,
         });
     }
 

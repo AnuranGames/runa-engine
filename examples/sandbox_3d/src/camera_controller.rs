@@ -42,6 +42,12 @@ impl CameraController {
     }
 }
 
+impl Default for CameraController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Script for CameraController {
     fn update(&mut self, ctx: &mut ScriptContext, dt: f32) {
         if Input::is_mouse_button_just_pressed(MouseButton::Right) {

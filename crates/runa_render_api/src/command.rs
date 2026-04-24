@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use glam::USizeVec2;
 use glam::{Mat4, Quat, Vec2, Vec3};
 
 use runa_asset::TextureAsset;
@@ -26,6 +25,8 @@ pub enum RenderCommands {
         position: Vec3,
         rotation: Quat,
         scale: Vec3,
+        uv_rect: [f32; 4],
+        order: i32,
     },
     Text {
         text: String,
@@ -41,11 +42,12 @@ pub enum RenderCommands {
     Tile {
         texture: Arc<TextureAsset>,
         position: Vec3,
-        size: USizeVec2,
+        size: Vec2,
         uv_rect: [f32; 4],
         flip_x: bool,
         flip_y: bool,
         color: [f32; 4],
+        order: i32,
     },
     Mesh3D {
         vertices: Vec<Vertex3D>,

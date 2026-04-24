@@ -1,3 +1,6 @@
+use runa_core::components::Sorting;
+use runa_core::components::SpriteAnimator;
+
 use super::*;
 
 pub(super) fn create_preview_world() -> World {
@@ -51,13 +54,17 @@ pub(super) fn object_world_bounds_2d(object: &Object) -> Option<(Vec2, Vec2)> {
     let mut max = center + Vec2::splat(0.25);
 
     if let Some(collider) = object.get_component::<Collider2D>() {
-        expand_bounds(&mut min, &mut max, center - collider.half_size, center + collider.half_size);
+        expand_bounds(
+            &mut min,
+            &mut max,
+            center - collider.half_size,
+            center + collider.half_size,
+        );
     }
 
     if object.get_component::<SpriteRenderer>().is_some() {
         let half =
-            Vec2::new(transform.scale.x.abs(), transform.scale.y.abs()).max(Vec2::splat(0.5))
-                * 0.5;
+            Vec2::new(transform.scale.x.abs(), transform.scale.y.abs()).max(Vec2::splat(0.5)) * 0.5;
         expand_bounds(&mut min, &mut max, center - half, center + half);
     }
 
@@ -78,8 +85,7 @@ pub(super) fn object_world_bounds_2d(object: &Object) -> Option<(Vec2, Vec2)> {
 
     if object.get_component::<MeshRenderer>().is_some() {
         let half =
-            Vec2::new(transform.scale.x.abs(), transform.scale.y.abs()).max(Vec2::splat(1.0))
-                * 0.5;
+            Vec2::new(transform.scale.x.abs(), transform.scale.y.abs()).max(Vec2::splat(1.0)) * 0.5;
         expand_bounds(&mut min, &mut max, center - half, center + half);
     }
 
@@ -178,8 +184,14 @@ pub(super) fn gizmo_handles(center: Vec2, scale: Vec3) -> [(GizmoHandleKind, Vec
     let offset = 0.45;
     [
         (GizmoHandleKind::Translate, center),
-        (GizmoHandleKind::ScaleX, center + Vec2::new(half.x + offset, 0.0)),
-        (GizmoHandleKind::ScaleY, center + Vec2::new(0.0, half.y + offset)),
+        (
+            GizmoHandleKind::ScaleX,
+            center + Vec2::new(half.x + offset, 0.0),
+        ),
+        (
+            GizmoHandleKind::ScaleY,
+            center + Vec2::new(0.0, half.y + offset),
+        ),
         (
             GizmoHandleKind::Rotate,
             center + Vec2::new(half.x + offset, half.y + offset),
@@ -193,18 +205,23 @@ pub(super) fn component_icon_name(type_id: TypeId, kind: ComponentRuntimeKind) -
     } else if type_id == TypeId::of::<AudioSource>() {
         "c-AudioSource"
     } else if type_id == TypeId::of::<AudioListener>() {
-        "c-AudioSource"
-    } else if type_id == TypeId::of::<Collider2D>() || type_id == TypeId::of::<PhysicsCollision>()
-    {
-        "c-Collider"
+        "c-AudioListener"
+    } else if type_id == TypeId::of::<Collider2D>() {
+        "c-Collider2D"
+    } else if type_id == TypeId::of::<PhysicsCollision>() {
+        "c-PhysicsCollision"
     } else if type_id == TypeId::of::<SpriteRenderer>() {
         "c-SpriteRenderer"
+    } else if type_id == TypeId::of::<SpriteAnimator>() {
+        "c-SpriteAnimator"
+    } else if type_id == TypeId::of::<Sorting>() {
+        "c-Sorting"
     } else if type_id == TypeId::of::<MeshRenderer>() {
         "c-MeshRenderer"
     } else if type_id == TypeId::of::<Tilemap>() || type_id == TypeId::of::<TilemapRenderer>() {
         "c-TilemapRenderer"
     } else if type_id == TypeId::of::<Canvas>() {
-        "c-CursorInteractable"
+        "c-Canvas"
     } else if type_id == TypeId::of::<CursorInteractable>() {
         "c-CursorInteractable"
     } else if type_id == TypeId::of::<ActiveCamera>() {
@@ -214,7 +231,7 @@ pub(super) fn component_icon_name(type_id: TypeId, kind: ComponentRuntimeKind) -
     } else if kind == ComponentRuntimeKind::Script {
         "c-Script"
     } else {
-        "c-Script"
+        "c-Object"
     }
 }
 
@@ -301,7 +318,11 @@ pub(super) fn world_to_screen(rect: egui::Rect, camera: Camera, world: Vec2) -> 
     egui::pos2(rect.left() + local_x, rect.top() + local_y)
 }
 
-pub(super) fn world3_to_screen(rect: egui::Rect, camera: Camera, world: Vec3) -> Option<egui::Pos2> {
+pub(super) fn world3_to_screen(
+    rect: egui::Rect,
+    camera: Camera,
+    world: Vec3,
+) -> Option<egui::Pos2> {
     let clip = camera.matrix() * world.extend(1.0);
     if clip.w.abs() <= f32::EPSILON {
         return None;

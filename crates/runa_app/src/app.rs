@@ -155,7 +155,6 @@ impl<'window> App<'window> {
             // Get ortho_size from active camera if available, otherwise use default camera
             renderer.draw(&self.queue, camera_matrix, virtual_size);
 
-
             // Update FPS
             self.frame_count += 1;
             let now = Instant::now();

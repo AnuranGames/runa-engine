@@ -62,8 +62,14 @@ impl<'window> EditorApp<'window> {
 
     pub(super) fn apply_loaded_project(&mut self, result: ProjectLoadResult) {
         let startup_world_path = result.project.startup_world_path();
+        self.project_session = Some(ProjectSession {
+            current_world_path: Some(startup_world_path.clone()),
+            project: result.project.clone(),
+        });
+
+        let runtime_registry = self.runtime_engine.runtime_registry().clone();
         let world = if startup_world_path.exists() {
-            match load_world(&startup_world_path) {
+            match load_world_with_runtime_registry(&startup_world_path, &runtime_registry) {
                 Ok(world) => world,
                 Err(error) => {
                     self.push_output(format!(
@@ -75,16 +81,13 @@ impl<'window> EditorApp<'window> {
         } else {
             create_empty_world()
         };
-        self.project_session = Some(ProjectSession {
-            current_world_path: Some(startup_world_path),
-            project: result.project.clone(),
-        });
         self.world = world;
         self.ensure_world_runtime_registry();
         self.selection = self.first_object_id();
         self.content_browser
             .set_project_root(result.project.root_dir.clone(), &self.settings);
-        let merged_records = placeables::merge_placeable_object_records(result.metadata.object_records);
+        let merged_records =
+            placeables::merge_placeable_object_records(result.metadata.object_records);
         self.place_object.objects = merged_records
             .iter()
             .map(|record| record.descriptor.clone())
@@ -94,6 +97,7 @@ impl<'window> EditorApp<'window> {
             .map(|record| (record.descriptor.id.clone(), record.object))
             .collect();
         self.place_object.registered_types = result.metadata.registered_types;
+        self.sync_world_serialized_type_metadata();
         self.place_object.source_stamp = None;
         self.status_line = format!("Opened project {}.", result.project.manifest.name);
         self.push_output(self.status_line.clone());
@@ -115,7 +119,8 @@ impl<'window> EditorApp<'window> {
     }
 
     pub(super) fn open_world_from_path(&mut self, path: PathBuf) {
-        match load_world(&path) {
+        let runtime_registry = self.runtime_engine.runtime_registry().clone();
+        match load_world_with_runtime_registry(&path, &runtime_registry) {
             Ok(world) => {
                 self.world = world;
                 self.ensure_world_runtime_registry();
@@ -186,6 +191,12 @@ impl<'window> EditorApp<'window> {
 
         if self.runtime_process.is_some() {
             self.stop_project();
+        }
+
+        if let Err(error) = ensure_editor_bridge_files(&session.project.root_dir) {
+            self.status_line = format!("Failed to refresh project runtime bootstrap: {error}");
+            self.push_output(self.status_line.clone());
+            return;
         }
 
         self.save_current_world();
@@ -264,9 +275,19 @@ impl<'window> EditorApp<'window> {
             return;
         }
 
+        if let Err(error) = ensure_editor_bridge_files(&session.project.root_dir) {
+            self.status_line = format!("Failed to refresh project runtime bootstrap: {error}");
+            self.push_output(self.status_line.clone());
+            return;
+        }
+
         if let Err(error) = ensure_release_windows_subsystem(
             &session.project.root_dir,
-            session.project.manifest.build.hide_console_window_on_windows,
+            session
+                .project
+                .manifest
+                .build
+                .hide_console_window_on_windows,
         ) {
             self.status_line = format!("Failed to prepare release main.rs: {error}");
             self.push_output(self.status_line.clone());
@@ -354,9 +375,8 @@ impl<'window> EditorApp<'window> {
                         self.push_output(self.status_line.clone());
                     }
                     Err(error) => {
-                        self.status_line = format!(
-                            "Build finished but failed to copy artifact: {error}"
-                        );
+                        self.status_line =
+                            format!("Build finished but failed to copy artifact: {error}");
                         self.push_output(self.status_line.clone());
                     }
                 }

@@ -53,9 +53,6 @@ impl Collider2D {
         let other_min = other.min(other_center);
         let other_max = other.max(other_center);
 
-        min.x <= other_max.x
-            && max.x >= other_min.x
-            && min.y <= other_max.y
-            && max.y >= other_min.y
+        min.x <= other_max.x && max.x >= other_min.x && min.y <= other_max.y && max.y >= other_min.y
     }
 }

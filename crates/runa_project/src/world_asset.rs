@@ -1,12 +1,14 @@
+use std::any::TypeId;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use runa_asset::{AudioAsset, Handle, TextureAsset};
 use runa_core::components::{
     ActiveCamera, AudioSource, Camera, Mesh, MeshRenderer, ObjectDefinitionInstance,
     PhysicsCollision, ProjectionType, SerializedField, SerializedTypeEntry, SerializedTypeKind,
-    SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform,
-    DEFAULT_SPRITE_PIXELS_PER_UNIT,
+    SerializedTypeStorage, Sorting, SpriteAnimationClip, SpriteAnimator, SpriteRenderer,
+    SpriteSheet, Tilemap, TilemapLayer, TilemapRenderer, Transform, DEFAULT_SPRITE_PIXELS_PER_UNIT,
 };
 use runa_core::glam::{IVec2, Quat, USizeVec2, Vec2, Vec3};
 use runa_core::ocs::Object;
@@ -27,6 +29,10 @@ pub struct WorldObjectAsset {
     pub transform: TransformAsset,
     pub mesh_renderer: Option<MeshRendererAsset>,
     pub sprite_renderer: Option<SpriteRendererAsset>,
+    #[serde(default)]
+    pub sprite_animator: Option<SpriteAnimatorAsset>,
+    #[serde(default)]
+    pub sorting: Option<SortingAsset>,
     pub tilemap: Option<TilemapAsset>,
     pub camera: Option<CameraAsset>,
     pub active_camera: bool,
@@ -110,10 +116,62 @@ pub struct SpriteRendererAsset {
     pub sprite: Option<String>,
     #[serde(default = "default_sprite_pixels_per_unit")]
     pub pixels_per_unit: f32,
+    #[serde(default = "default_sprite_uv_rect")]
+    pub uv_rect: [f32; 4],
 }
 
 fn default_sprite_pixels_per_unit() -> f32 {
     DEFAULT_SPRITE_PIXELS_PER_UNIT
+}
+
+fn default_sprite_uv_rect() -> [f32; 4] {
+    SpriteRenderer::FULL_UV_RECT
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpriteAnimatorAsset {
+    #[serde(default = "default_sprite_sheet_columns")]
+    pub columns: u32,
+    #[serde(default = "default_sprite_sheet_rows")]
+    pub rows: u32,
+    #[serde(default)]
+    pub clips: Vec<SpriteAnimationClipAsset>,
+    #[serde(default)]
+    pub current_clip: Option<String>,
+    #[serde(default)]
+    pub current_frame: u32,
+    #[serde(default = "default_sprite_animator_playing")]
+    pub playing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpriteAnimationClipAsset {
+    pub name: String,
+    pub start_frame: u32,
+    pub end_frame: u32,
+    pub fps: f32,
+    pub looping: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SortingAsset {
+    pub order: i32,
+}
+
+fn default_sprite_sheet_columns() -> u32 {
+    1
+}
+
+fn default_sprite_sheet_rows() -> u32 {
+    1
+}
+
+fn default_sprite_animator_playing() -> bool {
+    true
+}
+
+fn default_tilemap_pixels_per_unit() -> f32 {
+    16.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +234,22 @@ pub struct TilemapAsset {
     pub height: u32,
     pub tile_size: [u32; 2],
     pub offset: [i32; 2],
+    #[serde(default = "default_tilemap_pixels_per_unit")]
+    pub pixels_per_unit: f32,
+    #[serde(default)]
+    pub atlas: Option<TilemapAtlasAsset>,
+    #[serde(default)]
+    pub selected_tile: u32,
     pub layers: Vec<TilemapLayerAsset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TilemapAtlasAsset {
+    pub texture: Option<String>,
+    #[serde(default = "default_sprite_sheet_columns")]
+    pub columns: u32,
+    #[serde(default = "default_sprite_sheet_rows")]
+    pub rows: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,6 +257,8 @@ pub struct TilemapLayerAsset {
     pub name: String,
     pub visible: bool,
     pub opacity: f32,
+    #[serde(default)]
+    pub tiles: Vec<Option<u32>>,
 }
 
 pub fn create_empty_world() -> World {
@@ -256,7 +331,11 @@ impl WorldAsset {
 
     pub fn into_world_with_project_root(self, project_root: Option<&Path>) -> World {
         let mut world = World::default();
-        for object in self.objects.into_iter().map(|object| object.into_object(project_root)) {
+        for object in self
+            .objects
+            .into_iter()
+            .map(|object| object.into_object(project_root))
+        {
             world.spawn(object);
         }
         world
@@ -268,11 +347,9 @@ impl WorldAsset {
         runtime_registry: &runa_core::registry::RuntimeRegistry,
     ) -> World {
         let mut world = World::default();
-        for object in self
-            .objects
-            .into_iter()
-            .map(|object| object.into_object_with_runtime_registry(project_root, Some(runtime_registry)))
-        {
+        for object in self.objects.into_iter().map(|object| {
+            object.into_object_with_runtime_registry(project_root, Some(runtime_registry))
+        }) {
             world.spawn(object);
         }
         world
@@ -317,6 +394,12 @@ impl WorldObjectAsset {
             sprite_renderer: object
                 .get_component::<SpriteRenderer>()
                 .map(SpriteRendererAsset::from_component),
+            sprite_animator: object
+                .get_component::<SpriteAnimator>()
+                .map(SpriteAnimatorAsset::from_component),
+            sorting: object
+                .get_component::<Sorting>()
+                .map(SortingAsset::from_component),
             tilemap: object
                 .get_component::<Tilemap>()
                 .map(TilemapAsset::from_component),
@@ -330,7 +413,10 @@ impl WorldObjectAsset {
             physics_collision: object
                 .get_component::<PhysicsCollision>()
                 .map(PhysicsCollisionAsset::from_component),
-            serialized_components: collect_serialized_type_assets(object, SerializedTypeKind::Component),
+            serialized_components: collect_serialized_type_assets(
+                object,
+                SerializedTypeKind::Component,
+            ),
             serialized_scripts: collect_serialized_type_assets(object, SerializedTypeKind::Script),
         }
     }
@@ -344,56 +430,73 @@ impl WorldObjectAsset {
         project_root: Option<&Path>,
         runtime_registry: Option<&runa_core::registry::RuntimeRegistry>,
     ) -> Object {
-        let object_id = self.object_id.clone();
-        let mut object = Object::new(self.name);
-        object.add_component(self.transform.into_component());
+        let WorldObjectAsset {
+            name,
+            object_id,
+            transform,
+            mesh_renderer,
+            sprite_renderer,
+            sprite_animator,
+            sorting,
+            tilemap,
+            camera,
+            active_camera,
+            audio_source,
+            physics_collision,
+            serialized_components,
+            serialized_scripts,
+        } = self;
 
-        if let Some(mesh_renderer) = self.mesh_renderer {
-            object.add_component(mesh_renderer.into_component());
-        }
-        if let Some(sprite_renderer) = self.sprite_renderer {
-            object.add_component(sprite_renderer.into_component(project_root));
-        }
-        if let Some(tilemap) = self.tilemap {
-            object.add_component(tilemap.into_component());
-            if object.get_component::<TilemapRenderer>().is_none() {
-                object.add_component(TilemapRenderer::new());
+        if let (Some(archetype_id), Some(registry)) = (object_id.as_ref(), runtime_registry) {
+            let key = runa_core::registry::ArchetypeKey::from(archetype_id.clone());
+            if registry.archetypes().contains_key(&key) {
+                let mut temp_world = World::default();
+                temp_world.set_runtime_registry(Arc::new(registry.clone()));
+                if let Some(spawned_id) = temp_world.spawn_archetype_by_key(&key) {
+                    if let Some(object) = temp_world.take_object(spawned_id) {
+                        return apply_asset_overrides_to_object(
+                            object,
+                            name,
+                            object_id,
+                            transform,
+                            mesh_renderer,
+                            sprite_renderer,
+                            sprite_animator,
+                            sorting,
+                            tilemap,
+                            camera,
+                            active_camera,
+                            audio_source,
+                            physics_collision,
+                            serialized_components,
+                            serialized_scripts,
+                            project_root,
+                            runtime_registry,
+                        );
+                    }
+                }
             }
         }
-        if let Some(camera) = self.camera {
-            let transform = object
-                .get_component::<Transform>()
-                .cloned()
-                .unwrap_or_else(Transform::default);
-            object.add_component(camera.into_component_with_transform(&transform));
-        }
-        if self.active_camera {
-            object.add_component(ActiveCamera);
-        }
-        if let Some(audio_source) = self.audio_source {
-            object.add_component(audio_source.into_component(project_root));
-        }
-        if let Some(physics_collision) = self.physics_collision {
-            object.add_component(physics_collision.into_component());
-        }
-        if let Some(object_id) = object_id {
-            object.add_component(ObjectDefinitionInstance::new(object_id));
-        }
 
-        apply_serialized_type_assets(
-            &mut object,
+        apply_asset_overrides_to_object(
+            Object::new(name.clone()),
+            name,
+            object_id,
+            transform,
+            mesh_renderer,
+            sprite_renderer,
+            sprite_animator,
+            sorting,
+            tilemap,
+            camera,
+            active_camera,
+            audio_source,
+            physics_collision,
+            serialized_components,
+            serialized_scripts,
+            project_root,
             runtime_registry,
-            SerializedTypeKind::Component,
-            self.serialized_components,
-        );
-        apply_serialized_type_assets(
-            &mut object,
-            runtime_registry,
-            SerializedTypeKind::Script,
-            self.serialized_scripts,
-        );
-
-        object
+        )
     }
 
     pub fn into_object_with_object_loader<F>(
@@ -418,6 +521,12 @@ impl WorldObjectAsset {
                 }
                 if self.sprite_renderer.is_some() {
                     spawned.sprite_renderer = self.sprite_renderer;
+                }
+                if self.sprite_animator.is_some() {
+                    spawned.sprite_animator = self.sprite_animator;
+                }
+                if self.sorting.is_some() {
+                    spawned.sorting = self.sorting;
                 }
                 if self.tilemap.is_some() {
                     spawned.tilemap = self.tilemap;
@@ -446,6 +555,109 @@ impl WorldObjectAsset {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn apply_asset_overrides_to_object(
+    mut object: Object,
+    name: String,
+    object_id: Option<String>,
+    transform: TransformAsset,
+    mesh_renderer: Option<MeshRendererAsset>,
+    sprite_renderer: Option<SpriteRendererAsset>,
+    sprite_animator: Option<SpriteAnimatorAsset>,
+    sorting: Option<SortingAsset>,
+    tilemap: Option<TilemapAsset>,
+    camera: Option<CameraAsset>,
+    active_camera: bool,
+    audio_source: Option<AudioSourceAsset>,
+    physics_collision: Option<PhysicsCollisionAsset>,
+    serialized_components: Vec<SerializedObjectTypeAsset>,
+    serialized_scripts: Vec<SerializedObjectTypeAsset>,
+    project_root: Option<&Path>,
+    runtime_registry: Option<&runa_core::registry::RuntimeRegistry>,
+) -> Object {
+    object.name = name;
+    object.add_component(transform.into_component());
+
+    if let Some(mesh_renderer) = mesh_renderer {
+        let _ = object.remove_component_type_id(TypeId::of::<MeshRenderer>());
+        object.add_component(mesh_renderer.into_component());
+    }
+    if let Some(sprite_renderer) = sprite_renderer {
+        let _ = object.remove_component_type_id(TypeId::of::<SpriteRenderer>());
+        object.add_component(sprite_renderer.into_component(project_root));
+    }
+    if let Some(sprite_animator) = sprite_animator {
+        let _ = object.remove_component_type_id(TypeId::of::<SpriteAnimator>());
+        object.add_component(sprite_animator.into_component());
+    }
+    if let Some(sorting) = sorting {
+        let _ = object.remove_component_type_id(TypeId::of::<Sorting>());
+        object.add_component(sorting.into_component());
+    }
+    apply_sprite_animator_frame_to_renderer(&mut object);
+    if let Some(tilemap) = tilemap {
+        let _ = object.remove_component_type_id(TypeId::of::<Tilemap>());
+        let _ = object.remove_component_type_id(TypeId::of::<TilemapRenderer>());
+        object.add_component(tilemap.into_component(project_root));
+        object.add_component(TilemapRenderer::new());
+    }
+    if let Some(camera) = camera {
+        let _ = object.remove_component_type_id(TypeId::of::<Camera>());
+        let transform = object
+            .get_component::<Transform>()
+            .cloned()
+            .unwrap_or_else(Transform::default);
+        object.add_component(camera.into_component_with_transform(&transform));
+    }
+    if active_camera {
+        if object.get_component::<ActiveCamera>().is_none() {
+            object.add_component(ActiveCamera);
+        }
+    } else {
+        let _ = object.remove_component_type_id(TypeId::of::<ActiveCamera>());
+    }
+    if let Some(audio_source) = audio_source {
+        let _ = object.remove_component_type_id(TypeId::of::<AudioSource>());
+        object.add_component(audio_source.into_component(project_root));
+    }
+    if let Some(physics_collision) = physics_collision {
+        let _ = object.remove_component_type_id(TypeId::of::<PhysicsCollision>());
+        object.add_component(physics_collision.into_component());
+    }
+    if let Some(object_id) = object_id {
+        let _ = object.remove_component_type_id(TypeId::of::<ObjectDefinitionInstance>());
+        object.add_component(ObjectDefinitionInstance::new(object_id));
+    }
+
+    apply_serialized_type_assets(
+        &mut object,
+        runtime_registry,
+        SerializedTypeKind::Component,
+        serialized_components,
+    );
+    apply_serialized_type_assets(
+        &mut object,
+        runtime_registry,
+        SerializedTypeKind::Script,
+        serialized_scripts,
+    );
+
+    object
+}
+
+fn apply_sprite_animator_frame_to_renderer(object: &mut Object) {
+    let Some(uv_rect) = object
+        .get_component::<SpriteAnimator>()
+        .map(|animator| animator.sheet.uv_rect_for_frame(animator.current_frame))
+    else {
+        return;
+    };
+
+    if let Some(sprite) = object.get_component_mut::<SpriteRenderer>() {
+        sprite.set_uv_rect(uv_rect);
+    }
+}
+
 fn collect_serialized_type_assets(
     object: &Object,
     kind: SerializedTypeKind,
@@ -464,13 +676,15 @@ fn collect_serialized_type_assets(
             continue;
         }
 
-        if let Some(fields) = object.with_component_by_type_id(info.type_id(), |component| {
-            component.serialized_fields()
-        }) {
-            assets.push(SerializedObjectTypeAsset {
-                type_name: info.type_name().to_string(),
-                fields,
-            });
+        if let Some(fields) = object
+            .with_component_by_type_id(info.type_id(), |component| component.serialized_fields())
+        {
+            let type_name = object
+                .runtime_registry()
+                .and_then(|registry| registry.types().get_by_id(info.type_id()))
+                .map(|metadata| metadata.type_name().to_string())
+                .unwrap_or_else(|| info.type_name().to_string());
+            assets.push(SerializedObjectTypeAsset { type_name, fields });
         }
     }
 
@@ -510,8 +724,17 @@ fn apply_serialized_type_assets(
     assets: Vec<SerializedObjectTypeAsset>,
 ) {
     for asset in assets {
+        if let Some(type_id) = find_existing_object_type_id(object, kind, &asset.type_name) {
+            for field in &asset.fields {
+                let _ = object.with_component_mut_by_type_id(type_id, |component| {
+                    component.set_serialized_field(&field.name, field.value.clone())
+                });
+            }
+            continue;
+        }
+
         if let Some(registry) = runtime_registry {
-            if let Some(metadata) = registry.types().get_by_name(&asset.type_name) {
+            if let Some(metadata) = find_registered_type_metadata(registry, &asset.type_name) {
                 let type_id = metadata.type_id();
                 let has_runtime_instance =
                     object.with_component_by_type_id(type_id, |_| ()).is_some();
@@ -542,6 +765,71 @@ fn apply_serialized_type_assets(
     }
 }
 
+fn find_existing_object_type_id(
+    object: &Object,
+    kind: SerializedTypeKind,
+    type_name: &str,
+) -> Option<TypeId> {
+    let matches_kind = |info: &runa_core::ocs::ObjectComponentInfo| match kind {
+        SerializedTypeKind::Component => {
+            info.kind() == runa_core::components::ComponentRuntimeKind::Component
+        }
+        SerializedTypeKind::Script => {
+            info.kind() == runa_core::components::ComponentRuntimeKind::Script
+        }
+    };
+
+    if let Some(info) = object
+        .component_infos()
+        .into_iter()
+        .filter(matches_kind)
+        .find(|info| info.type_name() == type_name)
+    {
+        return Some(info.type_id());
+    }
+
+    let short_name = short_type_name(type_name);
+    let mut matches = object
+        .component_infos()
+        .into_iter()
+        .filter(matches_kind)
+        .filter(|info| short_type_name(info.type_name()) == short_name);
+
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+
+    Some(first.type_id())
+}
+
+fn find_registered_type_metadata<'a>(
+    registry: &'a runa_core::registry::RuntimeRegistry,
+    type_name: &str,
+) -> Option<&'a runa_core::registry::TypeMetadata> {
+    if let Some(metadata) = registry.types().get_by_name(type_name) {
+        return Some(metadata);
+    }
+
+    let short_name = short_type_name(type_name);
+    let mut matches = registry
+        .types()
+        .registered_types()
+        .into_iter()
+        .filter(|metadata| short_type_name(metadata.type_name()) == short_name);
+
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+
+    registry.types().get_by_id(first.type_id())
+}
+
+fn short_type_name(type_name: &str) -> &str {
+    type_name.rsplit("::").next().unwrap_or(type_name)
+}
+
 fn is_builtin_serialized_type(type_id: std::any::TypeId) -> bool {
     use std::any::TypeId;
 
@@ -549,6 +837,8 @@ fn is_builtin_serialized_type(type_id: std::any::TypeId) -> bool {
         TypeId::of::<Transform>(),
         TypeId::of::<MeshRenderer>(),
         TypeId::of::<SpriteRenderer>(),
+        TypeId::of::<SpriteAnimator>(),
+        TypeId::of::<Sorting>(),
         TypeId::of::<Tilemap>(),
         TypeId::of::<TilemapRenderer>(),
         TypeId::of::<Camera>(),
@@ -595,9 +885,11 @@ impl MeshRendererAsset {
             MeshPrimitiveAsset::Cube { size } => Mesh::cube(size),
             MeshPrimitiveAsset::Quad { width, height } => Mesh::quad(width, height),
             MeshPrimitiveAsset::Plane { width, depth } => Mesh::plane(width, depth),
-            MeshPrimitiveAsset::Pyramid { width, height, depth } => {
-                Mesh::pyramid(width, height, depth)
-            }
+            MeshPrimitiveAsset::Pyramid {
+                width,
+                height,
+                depth,
+            } => Mesh::pyramid(width, height, depth),
         };
 
         MeshRenderer {
@@ -612,12 +904,14 @@ impl SpriteRendererAsset {
         Self {
             sprite: component.texture_path.clone(),
             pixels_per_unit: component.pixels_per_unit,
+            uv_rect: component.uv_rect,
         }
     }
 
     fn into_component(self, project_root: Option<&Path>) -> SpriteRenderer {
         let mut sprite = SpriteRenderer::default();
         sprite.pixels_per_unit = self.pixels_per_unit.max(f32::EPSILON);
+        sprite.set_uv_rect(self.uv_rect);
         if let Some(path) = self.sprite {
             if let Some(project_root) = project_root {
                 if let Some(handle) = load_texture_handle(project_root, &path) {
@@ -630,6 +924,76 @@ impl SpriteRendererAsset {
             }
         }
         sprite
+    }
+}
+
+impl SpriteAnimatorAsset {
+    fn from_component(component: &SpriteAnimator) -> Self {
+        Self {
+            columns: component.sheet.columns,
+            rows: component.sheet.rows,
+            clips: component
+                .clips
+                .iter()
+                .map(SpriteAnimationClipAsset::from_component)
+                .collect(),
+            current_clip: component.current_clip.clone(),
+            current_frame: component.current_frame,
+            playing: component.playing,
+        }
+    }
+
+    fn into_component(self) -> SpriteAnimator {
+        let clips = if self.clips.is_empty() {
+            vec![SpriteAnimationClip::new("Default", 0, 0, 12.0)]
+        } else {
+            self.clips
+                .into_iter()
+                .map(SpriteAnimationClipAsset::into_component)
+                .collect()
+        };
+
+        SpriteAnimator::from_clips(
+            SpriteSheet::new(self.columns, self.rows),
+            clips,
+            self.current_clip,
+            self.current_frame,
+            self.playing,
+        )
+    }
+}
+
+impl SpriteAnimationClipAsset {
+    fn from_component(component: &SpriteAnimationClip) -> Self {
+        Self {
+            name: component.name.clone(),
+            start_frame: component.start_frame,
+            end_frame: component.end_frame,
+            fps: component.fps,
+            looping: component.looping,
+        }
+    }
+
+    fn into_component(self) -> SpriteAnimationClip {
+        SpriteAnimationClip {
+            name: self.name,
+            start_frame: self.start_frame,
+            end_frame: self.end_frame,
+            fps: self.fps,
+            looping: self.looping,
+        }
+    }
+}
+
+impl SortingAsset {
+    fn from_component(component: &Sorting) -> Self {
+        Self {
+            order: component.order,
+        }
+    }
+
+    fn into_component(self) -> Sorting {
+        Sorting { order: self.order }
     }
 }
 
@@ -650,7 +1014,8 @@ impl CameraAsset {
 
     fn into_component_with_transform(self, transform: &Transform) -> Camera {
         let inverse_rotation = transform.rotation.inverse();
-        let local_position = inverse_rotation * (Vec3::from_array(self.position) - transform.position);
+        let local_position =
+            inverse_rotation * (Vec3::from_array(self.position) - transform.position);
         let local_target = inverse_rotation * (Vec3::from_array(self.target) - transform.position);
         let local_up = inverse_rotation * Vec3::from_array(self.up);
 
@@ -742,44 +1107,83 @@ impl TilemapAsset {
             height: tilemap.height,
             tile_size: [tilemap.tile_size.x as u32, tilemap.tile_size.y as u32],
             offset: [tilemap.offset.x, tilemap.offset.y],
+            pixels_per_unit: tilemap.pixels_per_unit,
+            atlas: tilemap.atlas.as_ref().map(|atlas| TilemapAtlasAsset {
+                texture: atlas.texture_path.clone(),
+                columns: atlas.columns,
+                rows: atlas.rows,
+            }),
+            selected_tile: tilemap.selected_tile,
             layers: tilemap
                 .layers
                 .iter()
-                .map(TilemapLayerAsset::from_component)
+                .map(|layer| TilemapLayerAsset::from_component(layer, tilemap))
                 .collect(),
         }
     }
 
-    fn into_component(self) -> Tilemap {
+    fn into_component(self, project_root: Option<&Path>) -> Tilemap {
         let mut tilemap = Tilemap {
             width: self.width,
             height: self.height,
             tile_size: USizeVec2::new(self.tile_size[0] as usize, self.tile_size[1] as usize),
             offset: IVec2::new(self.offset[0], self.offset[1]),
             layers: Vec::new(),
+            atlas: None,
+            selected_tile: self.selected_tile,
+            pixels_per_unit: self.pixels_per_unit.max(f32::EPSILON),
         };
+        if let Some(atlas) = self.atlas {
+            if let (Some(project_root), Some(path)) = (project_root, atlas.texture.clone()) {
+                if let Some(texture) = load_texture_handle(project_root, &path) {
+                    tilemap.set_atlas(Some(texture), Some(path), atlas.columns, atlas.rows);
+                }
+            }
+        }
         for layer in self.layers {
             tilemap
                 .layers
-                .push(layer.into_component(self.width, self.height));
+                .push(layer.into_component(self.width, self.height, &tilemap));
         }
         tilemap
     }
 }
 
 impl TilemapLayerAsset {
-    fn from_component(layer: &TilemapLayer) -> Self {
+    fn from_component(layer: &TilemapLayer, tilemap: &Tilemap) -> Self {
         Self {
             name: layer.name.clone(),
             visible: layer.visible,
             opacity: layer.opacity,
+            tiles: layer
+                .tiles
+                .iter()
+                .map(|tile| {
+                    tile.texture.as_ref()?;
+                    tilemap
+                        .atlas
+                        .as_ref()
+                        .and_then(|atlas| atlas.tile_index_for_uv(tile.uv_rect))
+                })
+                .collect(),
         }
     }
 
-    fn into_component(self, width: u32, height: u32) -> TilemapLayer {
+    fn into_component(self, width: u32, height: u32, tilemap: &Tilemap) -> TilemapLayer {
         let mut layer = TilemapLayer::new(self.name, width, height);
         layer.visible = self.visible;
         layer.opacity = self.opacity;
+        for (index, frame) in self.tiles.into_iter().enumerate() {
+            let Some(frame) = frame else {
+                continue;
+            };
+            let Some(tile) = tilemap.atlas_tile(frame) else {
+                continue;
+            };
+            if let Some(target) = layer.tiles.get_mut(index) {
+                *target = tile;
+            }
+        }
         layer
     }
 }
@@ -789,9 +1193,9 @@ fn infer_mesh_primitive(mesh: &Mesh) -> Option<MeshPrimitiveAsset> {
     let (min, max) = mesh_bounds(mesh)?;
     let size = max - min;
     match hint {
-        runa_core::components::BuiltinMeshPrimitive::Cube => {
-            Some(MeshPrimitiveAsset::Cube { size: size.x.abs().max(size.y.abs()).max(size.z.abs()) })
-        }
+        runa_core::components::BuiltinMeshPrimitive::Cube => Some(MeshPrimitiveAsset::Cube {
+            size: size.x.abs().max(size.y.abs()).max(size.z.abs()),
+        }),
         runa_core::components::BuiltinMeshPrimitive::Quad => Some(MeshPrimitiveAsset::Quad {
             width: size.x.abs(),
             height: size.y.abs(),
@@ -919,9 +1323,8 @@ mod tests {
             }],
         }];
 
-        let object = override_asset.into_object_with_object_loader(None, |_object_id| {
-            Some(base_asset.clone())
-        });
+        let object = override_asset
+            .into_object_with_object_loader(None, |_object_id| Some(base_asset.clone()));
 
         let serialized_speed = object
             .get_component::<SerializedTypeStorage>()
@@ -938,5 +1341,121 @@ mod tests {
             .unwrap_or_default();
 
         assert!((serialized_speed - 4.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn runtime_registry_loading_prefers_archetype_state_for_nonserialized_scripts() {
+        let mut registry = RuntimeRegistry::new();
+        registry.register_archetype_named("test_rotator", || {
+            let mut object = Object::new("Rotator");
+            object.add_component(TestScript { speed: 7.0 });
+            object
+        });
+
+        let asset = WorldObjectAsset {
+            name: "Rotator Instance".to_string(),
+            object_id: Some("test_rotator".to_string()),
+            transform: super::TransformAsset::default(),
+            mesh_renderer: None,
+            sprite_renderer: None,
+            sprite_animator: None,
+            sorting: None,
+            tilemap: None,
+            camera: None,
+            active_camera: false,
+            audio_source: None,
+            physics_collision: None,
+            serialized_components: Vec::new(),
+            serialized_scripts: Vec::new(),
+        };
+
+        let object = asset.into_object_with_runtime_registry(None, Some(&registry));
+        let loaded_speed = object
+            .get_component::<TestScript>()
+            .map(|script| script.speed)
+            .unwrap_or_default();
+
+        assert!((loaded_speed - 7.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn archetype_loading_applies_serialized_fields_to_existing_unregistered_script_instance() {
+        let mut registry = RuntimeRegistry::new();
+        registry.register_archetype_named("test_rotator", || {
+            let mut object = Object::new("Rotator");
+            object.add_component(TestScript { speed: 7.0 });
+            object
+        });
+
+        let asset = WorldObjectAsset {
+            name: "Rotator Instance".to_string(),
+            object_id: Some("test_rotator".to_string()),
+            transform: super::TransformAsset::default(),
+            mesh_renderer: None,
+            sprite_renderer: None,
+            sprite_animator: None,
+            sorting: None,
+            tilemap: None,
+            camera: None,
+            active_camera: false,
+            audio_source: None,
+            physics_collision: None,
+            serialized_components: Vec::new(),
+            serialized_scripts: vec![SerializedObjectTypeAsset {
+                type_name: "TestScript".to_string(),
+                fields: vec![SerializedField {
+                    name: "speed".to_string(),
+                    value: SerializedFieldValue::F32(0.0),
+                }],
+            }],
+        };
+
+        let object = asset.into_object_with_runtime_registry(None, Some(&registry));
+        let loaded_speed = object
+            .get_component::<TestScript>()
+            .map(|script| script.speed)
+            .unwrap_or_default();
+
+        assert!(loaded_speed.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn runtime_registry_loading_creates_plain_script_from_serialized_entry() {
+        let mut registry = RuntimeRegistry::new();
+        registry.register_script_named_factory::<TestScript, _>("TestScript", || TestScript {
+            speed: 1.0,
+        });
+
+        let asset = WorldObjectAsset {
+            name: "Plain Script Object".to_string(),
+            object_id: None,
+            transform: super::TransformAsset::default(),
+            mesh_renderer: None,
+            sprite_renderer: None,
+            sprite_animator: None,
+            sorting: None,
+            tilemap: None,
+            camera: None,
+            active_camera: false,
+            audio_source: None,
+            physics_collision: None,
+            serialized_components: Vec::new(),
+            serialized_scripts: vec![SerializedObjectTypeAsset {
+                type_name: "TestScript".to_string(),
+                fields: vec![SerializedField {
+                    name: "speed".to_string(),
+                    value: SerializedFieldValue::F32(3.25),
+                }],
+            }],
+        };
+
+        let object = asset.into_object_with_runtime_registry(None, Some(&registry));
+        let loaded_speed = object
+            .get_component::<TestScript>()
+            .map(|script| script.speed)
+            .unwrap_or_default();
+
+        assert!((loaded_speed - 3.25).abs() < f32::EPSILON);
+        assert!(object.get_component::<SerializedTypeStorage>().is_none());
     }
 }

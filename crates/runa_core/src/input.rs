@@ -259,12 +259,12 @@ pub fn centered_window_position() -> Option<(i32, i32)> {
         let monitor_size = monitor.size();
         let window_size = window.outer_size();
 
-        let x = monitor_position.x.saturating_add(
-            ((monitor_size.width as i64 - window_size.width as i64) / 2) as i32,
-        );
-        let y = monitor_position.y.saturating_add(
-            ((monitor_size.height as i64 - window_size.height as i64) / 2) as i32,
-        );
+        let x = monitor_position
+            .x
+            .saturating_add(((monitor_size.width as i64 - window_size.width as i64) / 2) as i32);
+        let y = monitor_position
+            .y
+            .saturating_add(((monitor_size.height as i64 - window_size.height as i64) / 2) as i32);
 
         Some((x, y))
     })

@@ -110,7 +110,11 @@ impl Camera {
         Self {
             position,
             target,
-            up: if up.length_squared() > 0.0 { up } else { Vec3::Y },
+            up: if up.length_squared() > 0.0 {
+                up
+            } else {
+                Vec3::Y
+            },
             ..*self
         }
     }

@@ -1,6 +1,4 @@
-use crate::components::{
-    Collider2D, Component, ComponentRuntimeKind, SerializedFieldAccess,
-};
+use crate::components::{Collider2D, Component, ComponentRuntimeKind, SerializedFieldAccess};
 use crate::ocs::{Object, ObjectHandle, ObjectId, ScriptCommands, World};
 use glam::Vec2;
 
@@ -98,7 +96,7 @@ impl<'a> ScriptContext<'a> {
 /// 3. `late_update()` - Called after all regular updates for the tick
 ///
 /// # Example
-/// ```
+/// ```rust,ignore
 /// struct Player {
 ///     speed: f32,
 /// }

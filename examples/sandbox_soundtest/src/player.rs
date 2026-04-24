@@ -3,8 +3,8 @@ use runa_core::{
     components::{ActiveCamera, AudioListener, Camera, SpriteRenderer, Transform},
     glam::Vec3,
     input_system::*,
-    SerializedFieldAccess,
     ocs::{Object, Script, ScriptContext, World},
+    SerializedFieldAccess,
 };
 use runa_engine::RunaArchetype;
 
@@ -64,6 +64,7 @@ pub fn create_player() -> Object {
             // Sound-test keeps the default 16 PPU sprite convention used by the
             // bundled 2D examples.
             pixels_per_unit: 16.0,
+            uv_rect: SpriteRenderer::FULL_UV_RECT,
         })
         .with(Player::new())
 }

@@ -1,7 +1,59 @@
 use super::*;
 
 impl<'window> EditorApp<'window> {
-    pub(super) fn add_registered_type_to_object(&mut self, object_id: ObjectId, type_id: TypeId) -> bool {
+    pub(super) fn sync_world_serialized_type_metadata(&mut self) {
+        let registered_types = self.place_object.registered_types.clone();
+        if registered_types.is_empty() {
+            return;
+        }
+
+        let object_ids = self.world_object_ids();
+        for object_id in object_ids {
+            let Some(object) = self.world.get_mut(object_id) else {
+                continue;
+            };
+            let Some(storage) = object.get_component_mut::<SerializedTypeStorage>() else {
+                continue;
+            };
+
+            for entry in &mut storage.entries {
+                let expected_kind = match entry.kind {
+                    SerializedTypeKind::Component => ProjectRegisteredTypeKind::Component,
+                    SerializedTypeKind::Script => ProjectRegisteredTypeKind::Script,
+                };
+                let Some(metadata) = registered_types.iter().find(|metadata| {
+                    metadata.kind == expected_kind
+                        && (metadata.type_name == entry.type_name
+                            || short_type_name(&metadata.type_name)
+                                == short_type_name(&entry.type_name))
+                }) else {
+                    continue;
+                };
+
+                entry.type_name = metadata.type_name.clone();
+
+                let mut merged_fields = Vec::with_capacity(metadata.default_fields.len());
+                for default_field in &metadata.default_fields {
+                    if let Some(existing) = entry
+                        .fields
+                        .iter()
+                        .find(|field| field.name == default_field.name)
+                    {
+                        merged_fields.push(existing.clone());
+                    } else {
+                        merged_fields.push(default_field.clone());
+                    }
+                }
+                entry.fields = merged_fields;
+            }
+        }
+    }
+
+    pub(super) fn add_registered_type_to_object(
+        &mut self,
+        object_id: ObjectId,
+        type_id: TypeId,
+    ) -> bool {
         let registry = self.runtime_registry().clone();
         let Some(object) = self.world.get_mut(object_id) else {
             return false;
@@ -74,7 +126,8 @@ impl<'window> EditorApp<'window> {
                         self.selection = Some(object_id);
                         self.status_line = format!("Created object from archetype {name}.");
                     } else {
-                        self.status_line = format!("Failed to create object from archetype {name}.");
+                        self.status_line =
+                            format!("Failed to create object from archetype {name}.");
                     }
                     ui.close();
                 }
@@ -287,6 +340,7 @@ impl<'window> EditorApp<'window> {
                             .collect();
                         self.place_object.registered_types = metadata.registered_types;
                         self.place_object.source_stamp = self.place_object.pending_stamp.take();
+                        self.sync_world_serialized_type_metadata();
                         self.status_line = "Project metadata refreshed.".to_string();
                     }
                     Err(error) => {
@@ -305,4 +359,8 @@ impl<'window> EditorApp<'window> {
             }
         }
     }
+}
+
+fn short_type_name(type_name: &str) -> &str {
+    type_name.rsplit("::").next().unwrap_or(type_name)
 }

@@ -98,7 +98,10 @@ pub mod typography {
 
     /// Get the font ID for component titles (bold style).
     pub fn component_title_font() -> FontId {
-        FontId::new(COMPONENT_TITLE_FONT_SIZE, FontFamily::Name("Arial Bold".into()))
+        FontId::new(
+            COMPONENT_TITLE_FONT_SIZE,
+            FontFamily::Name("Arial Bold".into()),
+        )
     }
 
     /// Get the font ID for small text.
@@ -190,9 +193,10 @@ pub fn apply_editor_style(ctx: &egui::Context) {
     style
         .text_styles
         .insert(TextStyle::Small, typography::small_font());
-    style
-        .text_styles
-        .insert(TextStyle::Name("component_title".into()), typography::component_title_font());
+    style.text_styles.insert(
+        TextStyle::Name("component_title".into()),
+        typography::component_title_font(),
+    );
 
     ctx.set_global_style(style);
 }

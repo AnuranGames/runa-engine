@@ -1,13 +1,15 @@
 use runa_asset::load_image;
-use runa_engine::{Engine, RunaArchetype, RunaComponent, RunaScript};
 use runa_core::{
-    components::{ui::CanvasSpace, ActiveCamera, Camera, Canvas, Collider2D, SpriteRenderer, Transform},
+    components::{
+        ui::CanvasSpace, ActiveCamera, Camera, Canvas, Collider2D, SpriteRenderer, Transform,
+    },
     glam::Vec3,
     input_system::*,
     ocs::{Object, Script, ScriptContext, World},
 };
+use runa_engine::{Engine, RunaArchetype, RunaComponent, RunaScript};
 
-#[derive(RunaComponent)]
+#[derive(Default, RunaComponent)]
 pub struct Health {
     pub current: i32,
 }
@@ -17,7 +19,6 @@ impl Health {
         Self { current }
     }
 }
-
 
 #[derive(RunaScript)]
 pub struct PlayerController {
@@ -31,6 +32,12 @@ impl PlayerController {
             speed: 16.0,
             direction: Vec3::ZERO,
         }
+    }
+}
+
+impl Default for PlayerController {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -78,7 +85,6 @@ impl Script for PlayerController {
     }
 }
 
-
 #[derive(RunaScript)]
 pub struct PlayerCameraFollow {
     #[serialize_field]
@@ -88,6 +94,12 @@ pub struct PlayerCameraFollow {
 impl PlayerCameraFollow {
     pub fn new() -> Self {
         Self { lock_z: 0.0 }
+    }
+}
+
+impl Default for PlayerCameraFollow {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -110,14 +122,16 @@ impl Script for PlayerCameraFollow {
         // Hard follow keeps the player and camera on the same fixed-step path.
         // This avoids the visible screen-space jitter that appears when the
         // camera smooths toward a target while the target itself is interpolated.
-        
+
         transform.position = Vec3::new(player_position.x, player_position.y, self.lock_z);
     }
 }
 
 pub fn create_player() -> Object {
     Object::new("Player")
-        .with(SpriteRenderer::new(Some(load_image!("assets/art/Charactert.png"))))
+        .with(SpriteRenderer::new(Some(load_image!(
+            "assets/art/Charactert.png"
+        ))))
         .with(Collider2D::new(2.0, 2.0))
         .with(Health::new(100))
         .with(PlayerController::new())

@@ -33,8 +33,8 @@ use runa_core::World;
 use runa_engine::Engine;
 use runa_project::{
     create_empty_project, create_empty_world, ensure_editor_bridge_files,
-    ensure_release_windows_subsystem, find_project_manifest, load_project, load_world, save_world,
-    AudioSourceAsset, PlaceableObjectDescriptor,
+    ensure_release_windows_subsystem, find_project_manifest, load_project,
+    load_world_with_runtime_registry, save_world, AudioSourceAsset, PlaceableObjectDescriptor,
     PlaceableObjectRecord, ProjectMetadataSnapshot, ProjectPaths, ProjectRegisteredTypeKind,
     ProjectRegisteredTypeRecord, SpriteRendererAsset, TilemapAsset, TilemapLayerAsset,
     TransformAsset, WorldObjectAsset,
@@ -51,7 +51,7 @@ use winit::window::{Window, WindowId};
 use crate::content_browser::ContentBrowserState;
 use crate::editor_camera::EditorCameraController;
 use crate::editor_settings::EditorSettings;
-use crate::inspector::inspector_ui;
+use crate::inspector::{inspector_ui, TilePaintMode, TilePaintToolState};
 use crate::style;
 
 pub fn run(project_path: Option<PathBuf>) -> Result<(), winit::error::EventLoopError> {
@@ -184,6 +184,7 @@ pub struct EditorApp<'window> {
     gizmo_enabled: bool,
     show_component_icons: bool,
     show_viewport_grid: bool,
+    tile_paint: TilePaintToolState,
     snap_enabled: bool,
     snap_step: f32,
     gizmo_drag: Option<ViewportDragState>,
@@ -259,6 +260,7 @@ impl<'window> EditorApp<'window> {
             gizmo_enabled: true,
             show_component_icons: true,
             show_viewport_grid: true,
+            tile_paint: TilePaintToolState::default(),
             snap_enabled: false,
             snap_step: 1.0,
             gizmo_drag: None,

@@ -181,10 +181,26 @@ impl Mesh {
         let hw = width * 0.5;
         let hh = height * 0.5;
         let vertices = vec![
-            Vertex3D { position: [-hw, -hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 0.0] },
-            Vertex3D { position: [ hw, -hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 0.0] },
-            Vertex3D { position: [ hw,  hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [1.0, 1.0] },
-            Vertex3D { position: [-hw,  hh, 0.0], normal: [0.0, 0.0, 1.0], uv: [0.0, 1.0] },
+            Vertex3D {
+                position: [-hw, -hh, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, -hh, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, hh, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-hw, hh, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 1.0],
+            },
         ];
         let indices = vec![0, 1, 2, 2, 3, 0];
         Self {
@@ -199,10 +215,26 @@ impl Mesh {
         let hw = width * 0.5;
         let hd = depth * 0.5;
         let vertices = vec![
-            Vertex3D { position: [-hw, 0.0, -hd], normal: [0.0, 1.0, 0.0], uv: [0.0, 0.0] },
-            Vertex3D { position: [ hw, 0.0, -hd], normal: [0.0, 1.0, 0.0], uv: [1.0, 0.0] },
-            Vertex3D { position: [ hw, 0.0,  hd], normal: [0.0, 1.0, 0.0], uv: [1.0, 1.0] },
-            Vertex3D { position: [-hw, 0.0,  hd], normal: [0.0, 1.0, 0.0], uv: [0.0, 1.0] },
+            Vertex3D {
+                position: [-hw, 0.0, -hd],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, 0.0, -hd],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, 0.0, hd],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-hw, 0.0, hd],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 1.0],
+            },
         ];
         let indices = vec![0, 1, 2, 2, 3, 0];
         Self {
@@ -219,30 +251,88 @@ impl Mesh {
         let apex = [0.0, height * 0.5, 0.0];
         let base_y = -height * 0.5;
         let vertices = vec![
-            Vertex3D { position: [-hw, base_y, -hd], normal: [0.0, -1.0, 0.0], uv: [0.0, 0.0] },
-            Vertex3D { position: [ hw, base_y, -hd], normal: [0.0, -1.0, 0.0], uv: [1.0, 0.0] },
-            Vertex3D { position: [ hw, base_y,  hd], normal: [0.0, -1.0, 0.0], uv: [1.0, 1.0] },
-            Vertex3D { position: [-hw, base_y,  hd], normal: [0.0, -1.0, 0.0], uv: [0.0, 1.0] },
-            Vertex3D { position: apex, normal: [0.0, 0.707, -0.707], uv: [0.5, 0.0] },
-            Vertex3D { position: [-hw, base_y, -hd], normal: [0.0, 0.707, -0.707], uv: [0.0, 1.0] },
-            Vertex3D { position: [ hw, base_y, -hd], normal: [0.0, 0.707, -0.707], uv: [1.0, 1.0] },
-            Vertex3D { position: apex, normal: [0.707, 0.707, 0.0], uv: [0.5, 0.0] },
-            Vertex3D { position: [ hw, base_y, -hd], normal: [0.707, 0.707, 0.0], uv: [0.0, 1.0] },
-            Vertex3D { position: [ hw, base_y,  hd], normal: [0.707, 0.707, 0.0], uv: [1.0, 1.0] },
-            Vertex3D { position: apex, normal: [0.0, 0.707, 0.707], uv: [0.5, 0.0] },
-            Vertex3D { position: [ hw, base_y,  hd], normal: [0.0, 0.707, 0.707], uv: [0.0, 1.0] },
-            Vertex3D { position: [-hw, base_y,  hd], normal: [0.0, 0.707, 0.707], uv: [1.0, 1.0] },
-            Vertex3D { position: apex, normal: [-0.707, 0.707, 0.0], uv: [0.5, 0.0] },
-            Vertex3D { position: [-hw, base_y,  hd], normal: [-0.707, 0.707, 0.0], uv: [0.0, 1.0] },
-            Vertex3D { position: [-hw, base_y, -hd], normal: [-0.707, 0.707, 0.0], uv: [1.0, 1.0] },
+            Vertex3D {
+                position: [-hw, base_y, -hd],
+                normal: [0.0, -1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, -hd],
+                normal: [0.0, -1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, hd],
+                normal: [0.0, -1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: [-hw, base_y, hd],
+                normal: [0.0, -1.0, 0.0],
+                uv: [0.0, 1.0],
+            },
+            Vertex3D {
+                position: apex,
+                normal: [0.0, 0.707, -0.707],
+                uv: [0.5, 0.0],
+            },
+            Vertex3D {
+                position: [-hw, base_y, -hd],
+                normal: [0.0, 0.707, -0.707],
+                uv: [0.0, 1.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, -hd],
+                normal: [0.0, 0.707, -0.707],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: apex,
+                normal: [0.707, 0.707, 0.0],
+                uv: [0.5, 0.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, -hd],
+                normal: [0.707, 0.707, 0.0],
+                uv: [0.0, 1.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, hd],
+                normal: [0.707, 0.707, 0.0],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: apex,
+                normal: [0.0, 0.707, 0.707],
+                uv: [0.5, 0.0],
+            },
+            Vertex3D {
+                position: [hw, base_y, hd],
+                normal: [0.0, 0.707, 0.707],
+                uv: [0.0, 1.0],
+            },
+            Vertex3D {
+                position: [-hw, base_y, hd],
+                normal: [0.0, 0.707, 0.707],
+                uv: [1.0, 1.0],
+            },
+            Vertex3D {
+                position: apex,
+                normal: [-0.707, 0.707, 0.0],
+                uv: [0.5, 0.0],
+            },
+            Vertex3D {
+                position: [-hw, base_y, hd],
+                normal: [-0.707, 0.707, 0.0],
+                uv: [0.0, 1.0],
+            },
+            Vertex3D {
+                position: [-hw, base_y, -hd],
+                normal: [-0.707, 0.707, 0.0],
+                uv: [1.0, 1.0],
+            },
         ];
-        let indices = vec![
-            0, 1, 2, 2, 3, 0,
-            4, 5, 6,
-            7, 8, 9,
-            10, 11, 12,
-            13, 14, 15,
-        ];
+        let indices = vec![0, 1, 2, 2, 3, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
         Self {
             vertices,
             indices,

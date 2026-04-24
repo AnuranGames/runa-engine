@@ -9,6 +9,8 @@ mod mesh_renderer;
 mod object_definition_instance;
 mod physics_collision;
 mod serialized_type_storage;
+mod sorting;
+mod sprite_animator;
 mod sprite_renderer;
 mod tilemap;
 mod transform;
@@ -30,6 +32,8 @@ pub use mesh_renderer::MeshRenderer;
 pub use object_definition_instance::ObjectDefinitionInstance;
 pub use physics_collision::PhysicsCollision;
 pub use serialized_type_storage::{SerializedTypeEntry, SerializedTypeKind, SerializedTypeStorage};
+pub use sorting::Sorting;
+pub use sprite_animator::{SpriteAnimationClip, SpriteAnimator, SpriteSheet};
 pub use sprite_renderer::{SpriteRenderer, DEFAULT_SPRITE_PIXELS_PER_UNIT};
 pub use tilemap::Rect;
 pub use tilemap::Tile;
@@ -68,6 +72,8 @@ impl_component!(
     ObjectDefinitionInstance,
     PhysicsCollision,
     SerializedTypeStorage,
+    Sorting,
+    SpriteAnimator,
     SpriteRenderer,
     Tilemap,
     TilemapRenderer,

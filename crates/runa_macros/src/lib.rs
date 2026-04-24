@@ -1,13 +1,15 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Field, Fields, Ident, Type, Visibility};
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Field, Fields, Ident, Type};
 
 #[proc_macro_derive(RunaComponent, attributes(runa, serialize_field))]
 pub fn derive_runa_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let ident = input.ident.clone();
-    let constructor = default_constructor_tokens(&input.data);
+    let type_name = type_registration_name(&input);
+    let constructor = type_factory_tokens(&input)
+        .unwrap_or_else(|| quote! { ::std::default::Default::default() });
     let serialized_fields = serialized_fields_tokens(&input.data);
     let serialized_setters = serialized_setters_tokens(&input.data);
 
@@ -40,7 +42,7 @@ pub fn derive_runa_component(input: TokenStream) -> TokenStream {
 
         impl ::runa_engine::RunaComponentType for #ident {
             fn runa_component_type_name() -> &'static str {
-                concat!(module_path!(), "::", stringify!(#ident))
+                #type_name
             }
         }
 
@@ -67,7 +69,9 @@ pub fn derive_runa_component(input: TokenStream) -> TokenStream {
 pub fn derive_runa_script(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let ident = input.ident.clone();
-    let constructor = default_constructor_tokens(&input.data);
+    let type_name = type_registration_name(&input);
+    let constructor = type_factory_tokens(&input)
+        .unwrap_or_else(|| quote! { ::std::default::Default::default() });
     let serialized_fields = serialized_fields_tokens(&input.data);
     let serialized_setters = serialized_setters_tokens(&input.data);
 
@@ -90,7 +94,7 @@ pub fn derive_runa_script(input: TokenStream) -> TokenStream {
 
         impl ::runa_engine::RunaScriptType for #ident {
             fn runa_script_type_name() -> &'static str {
-                concat!(module_path!(), "::", stringify!(#ident))
+                #type_name
             }
         }
 
@@ -117,8 +121,8 @@ pub fn derive_runa_script(input: TokenStream) -> TokenStream {
 pub fn derive_runa_archetype(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let ident = input.ident.clone();
-    let archetype_name = archetype_name_override(&input)
-        .unwrap_or_else(|| to_snake_case(&ident.to_string()));
+    let archetype_name =
+        archetype_name_override(&input).unwrap_or_else(|| to_snake_case(&ident.to_string()));
 
     TokenStream::from(quote! {
         impl ::runa_engine::RunaArchetype for #ident {
@@ -149,32 +153,6 @@ pub fn derive_runa_archetype(input: TokenStream) -> TokenStream {
             }
         }
     })
-}
-
-fn default_constructor_tokens(data: &Data) -> TokenStream2 {
-    match data {
-        Data::Struct(DataStruct { fields, .. }) => match fields {
-            Fields::Named(fields) => {
-                let fields = fields.named.iter().map(|field| {
-                    let ident = field.ident.as_ref().expect("named field");
-                    quote! { #ident: ::std::default::Default::default() }
-                });
-                quote! { Self { #(#fields,)* } }
-            }
-            Fields::Unnamed(fields) => {
-                let values = fields
-                    .unnamed
-                    .iter()
-                    .map(|_| quote! { ::std::default::Default::default() });
-                quote! { Self( #(#values),* ) }
-            }
-            Fields::Unit => quote! { Self },
-        },
-        _ => quote! {
-            compile_error!("Runa derives currently support only structs.");
-            unreachable!()
-        },
-    }
 }
 
 fn serialized_fields_tokens(data: &Data) -> TokenStream2 {
@@ -224,9 +202,7 @@ fn serializable_fields(data: &Data) -> Vec<Field> {
         Fields::Named(named) => named
             .named
             .iter()
-            .filter(|field| {
-                matches!(field.vis, Visibility::Public(_)) || has_serialize_field_attr(field)
-            })
+            .filter(|field| has_serialize_field_attr(field))
             .cloned()
             .collect(),
         _ => Vec::new(),
@@ -310,16 +286,20 @@ fn serialized_to_value_tokens(ty: &Type) -> Option<TokenStream2> {
         "bool" | "i32" | "i64" | "u32" | "u64" | "f32" | "f64" => Some(quote! { value }),
         "String" => Some(quote! { value }),
         "Vec2" => Some(quote! { ::runa_engine::runa_core::glam::Vec2::new(value[0], value[1]) }),
-        "Vec3" => Some(
-            quote! { ::runa_engine::runa_core::glam::Vec3::new(value[0], value[1], value[2]) },
-        ),
+        "Vec3" => {
+            Some(quote! { ::runa_engine::runa_core::glam::Vec3::new(value[0], value[1], value[2]) })
+        }
         _ => None,
     }
 }
 
 fn type_ident_string(ty: &Type) -> Option<String> {
     match ty {
-        Type::Path(type_path) => type_path.path.segments.last().map(|segment| segment.ident.to_string()),
+        Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string()),
         _ => None,
     }
 }
@@ -335,6 +315,33 @@ fn archetype_name_override(input: &DeriveInput) -> Option<String> {
             if meta.path.is_ident("name") {
                 let literal: syn::LitStr = meta.value()?.parse()?;
                 value = Some(literal.value());
+            }
+            Ok(())
+        });
+
+        if value.is_some() {
+            return value;
+        }
+    }
+
+    None
+}
+
+fn type_registration_name(input: &DeriveInput) -> String {
+    archetype_name_override(input).unwrap_or_else(|| input.ident.to_string())
+}
+
+fn type_factory_tokens(input: &DeriveInput) -> Option<TokenStream2> {
+    for attribute in &input.attrs {
+        if !attribute.path().is_ident("runa") {
+            continue;
+        }
+
+        let mut value = None;
+        let _ = attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("factory") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                value = Some(literal.parse::<TokenStream2>()?);
             }
             Ok(())
         });

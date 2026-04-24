@@ -95,11 +95,11 @@ cargo run -p sandbox
 
 ### Add Runa to a new project
 
-Current latest public tag: [`v0.3.0-alpha.1`](https://github.com/RunaGameEngine/runa/releases/tag/v0.3.0-alpha.1)
+Current latest public tag: [`v0.4.0-alpha.1`](https://github.com/RunaGameEngine/runa/releases/tag/v0.4.0-alpha.1)
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.3.0-alpha.1" }
+runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.4.0-alpha.1" }
 ```
 
 If you want to track the repository head instead of a tag:
@@ -214,7 +214,7 @@ Good practice in Runa:
 - use typed marker/data components instead of string tags
 - use `ObjectId` and queries for object communication
 
-Script fields intended for editor/runtime serialization can be exposed through public fields or `#[serialize_field]` on private fields when using the derive macros.
+Script fields intended for editor/runtime serialization must be marked explicitly with `#[serialize_field]` when using the derive macros. For script/component default values visible to the editor, the recommended path is `impl Default` on the type.
 
 Editor workflow notes:
 

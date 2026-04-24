@@ -26,12 +26,12 @@ impl BossEnemy {
     }
 }
 
-#[derive(RunaComponent)]
+#[derive(Default, RunaComponent)]
 struct Health {
     current: i32,
 }
 
-#[derive(RunaScript)]
+#[derive(Default, RunaScript)]
 struct PlayerController;
 
 impl Script for PlayerController {
@@ -50,13 +50,11 @@ fn engine_registers_builtin_types_automatically() {
 
     assert_eq!(transform.kind(), RegisteredTypeKind::Component);
     assert_eq!(transform.source(), RegistrationSource::BuiltIn);
-    assert!(
-        !engine
-            .runtime_registry()
-            .types()
-            .registered_builtin_types()
-            .is_empty()
-    );
+    assert!(!engine
+        .runtime_registry()
+        .types()
+        .registered_builtin_types()
+        .is_empty());
 }
 
 #[test]

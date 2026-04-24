@@ -99,6 +99,21 @@ impl<'window> EditorApp<'window> {
             self.gizmo_drag = None;
         }
 
+        if response.hovered()
+            && ctx.input(|input| input.pointer.primary_down())
+            && self.tile_paint.mode != TilePaintMode::None
+        {
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                let world_pos = self.viewport_world_pos(response.rect, pointer_pos);
+                if self.paint_tile_under_cursor(world_pos) {
+                    let camera = self.editor_camera.camera(self.pending_viewport_size);
+                    self.viewport_camera = Some(camera);
+                    self.draw_viewport_overlay(ui, response.rect, camera);
+                    return;
+                }
+            }
+        }
+
         if self.gizmo_enabled && response.drag_started_by(egui::PointerButton::Primary) {
             if let Some(pointer_pos) = response.interact_pointer_pos() {
                 let world_pos = self.viewport_world_pos(response.rect, pointer_pos);
@@ -153,6 +168,58 @@ impl<'window> EditorApp<'window> {
         self.editor_camera
             .camera(self.pending_viewport_size)
             .screen_to_world((local.x, local.y))
+    }
+
+    fn paint_tile_under_cursor(&mut self, world_pos: Vec2) -> bool {
+        let Some(object_id) = self.selection else {
+            return false;
+        };
+        let Some(object) = self.world.get_mut(object_id) else {
+            return false;
+        };
+        let Some(transform) = object.get_component::<Transform>().cloned() else {
+            return false;
+        };
+        let Some(tilemap) = object.get_component_mut::<Tilemap>() else {
+            return false;
+        };
+        if tilemap.layers.is_empty() {
+            self.status_line = "Tilemap has no layers to paint.".to_string();
+            return true;
+        }
+
+        let tile_size = tilemap.world_tile_size();
+        if tile_size.x <= f32::EPSILON || tile_size.y <= f32::EPSILON {
+            return true;
+        }
+
+        let scale = transform
+            .scale
+            .truncate()
+            .abs()
+            .max(Vec2::splat(f32::EPSILON));
+        let local = (world_pos - transform.position.truncate()) / scale;
+        let tile_x = (local.x / tile_size.x).floor() as i32;
+        let tile_y = (local.y / tile_size.y).floor() as i32;
+        let layer = self
+            .tile_paint
+            .layer
+            .min(tilemap.layers.len().saturating_sub(1) as u32) as usize;
+
+        match self.tile_paint.mode {
+            TilePaintMode::None => {}
+            TilePaintMode::Paint => {
+                if tilemap.atlas.is_none() {
+                    self.status_line = "Assign a Tilemap atlas before painting.".to_string();
+                    return true;
+                }
+                tilemap.paint_tile(layer, tile_x, tile_y, tilemap.selected_tile);
+            }
+            TilePaintMode::Erase => {
+                tilemap.erase_tile(layer, tile_x, tile_y);
+            }
+        }
+        true
     }
 
     fn draw_viewport_overlay(&self, ui: &mut egui::Ui, rect: egui::Rect, camera: Camera) {
@@ -343,7 +410,10 @@ impl<'window> EditorApp<'window> {
             painter,
             rect,
             editor_camera,
-            &[resolved.position, resolved.position + forward * (max_depth * 0.5)],
+            &[
+                resolved.position,
+                resolved.position + forward * (max_depth * 0.5),
+            ],
             color,
         );
     }
@@ -510,7 +580,8 @@ impl<'window> EditorApp<'window> {
             GizmoHandleKind::Rotate => {
                 let center = drag.start_position.truncate();
                 let current_angle = helpers::vec2_angle(world_pos - center);
-                let new_rotation_z = drag.start_rotation_z + (current_angle - drag.start_pointer_angle);
+                let new_rotation_z =
+                    drag.start_rotation_z + (current_angle - drag.start_pointer_angle);
                 let (x, y, _) = transform.rotation.to_euler(EulerRot::XYZ);
                 transform.rotation = Quat::from_euler(EulerRot::XYZ, x, y, new_rotation_z);
                 transform.previous_rotation = transform.rotation;
@@ -694,7 +765,11 @@ impl<'window> EditorApp<'window> {
                 };
 
                 let screen_anchor = if self.editor_camera.is_orthographic() {
-                    Some(helpers::world_to_screen(rect, camera, world_anchor.truncate()))
+                    Some(helpers::world_to_screen(
+                        rect,
+                        camera,
+                        world_anchor.truncate(),
+                    ))
                 } else {
                     helpers::world3_to_screen(rect, camera, world_anchor)
                 };

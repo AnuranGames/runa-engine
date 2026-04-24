@@ -1,6 +1,6 @@
 # Runtime And Editor Update Notes
 
-This document summarizes the larger runtime/editor changes that landed after `0.3.0-alpha.1`.
+This document summarizes the larger runtime/editor changes that landed in `0.4.0-alpha.1`.
 
 ## Runtime
 
@@ -24,8 +24,9 @@ This document summarizes the larger runtime/editor changes that landed after `0.
 - Typed archetypes remain the primary gameplay-facing template path
 - Runtime registry metadata now carries richer information for editor/tooling usage
 - Derived components and scripts can expose serialized fields through:
-  - public fields
-  - `#[serialize_field]` on private fields
+  - `#[serialize_field]` only
+- Recommended editor-visible defaults now come from `Default`
+  - if a type already uses `new()`, implement `Default` by delegating to `new()`
 - Editor/project flows can store serialized script/component state even when the editor process does not own the concrete runtime type directly
 - `SpriteRenderer` now carries `pixels_per_unit`, and the value is serialized through project/world assets
 

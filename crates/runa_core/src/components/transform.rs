@@ -49,10 +49,8 @@ impl Transform {
     }
 
     pub fn interpolated_rotation(&self, interpolation_factor: f32) -> Quat {
-        self.previous_rotation.slerp(
-            self.rotation,
-            interpolation_factor.clamp(0.0, 1.0),
-        )
+        self.previous_rotation
+            .slerp(self.rotation, interpolation_factor.clamp(0.0, 1.0))
     }
 
     pub fn sync_previous_to_current(&mut self) {

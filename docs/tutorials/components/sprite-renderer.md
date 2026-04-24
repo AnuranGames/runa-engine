@@ -58,10 +58,17 @@ let object = Object::new("Sprite")
         texture: Some(load_image!("assets/player.png")),
         texture_path: Some("assets/player.png".to_string()),
         pixels_per_unit: 32.0,
+        uv_rect: SpriteRenderer::FULL_UV_RECT,
     });
 ```
 
 The editor inspector exposes the same property, and world serialization stores it in `SpriteRendererAsset`.
+
+## Sprite Sheets
+
+`SpriteRenderer` can render a sub-region of the texture through `uv_rect`.
+For animation, prefer adding `SpriteAnimator` to the same object instead of changing `uv_rect` manually.
+`SpriteAnimator` owns frame timing and updates `SpriteRenderer` before rendering.
 
 ## Notes
 

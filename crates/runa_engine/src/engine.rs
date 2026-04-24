@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use runa_core::{
     components::{
-        ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D,
-        CursorInteractable, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision,
-        SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform, Component,
-        ui::CanvasSpace,
+        ui::CanvasSpace, ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D,
+        Component, CursorInteractable, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision,
+        SerializedTypeStorage, Sorting, SpriteAnimator, SpriteRenderer, Tilemap, TilemapLayer,
+        TilemapRenderer, Transform,
     },
     glam::USizeVec2,
     ocs::{Object, Script, World},
@@ -49,7 +49,8 @@ impl Engine {
         T: Component + 'static,
         F: Fn() -> T + Send + Sync + 'static,
     {
-        self.runtime_registry.register_component_factory::<T, F>(factory)
+        self.runtime_registry
+            .register_component_factory::<T, F>(factory)
     }
 
     pub fn register_component_named_factory<T, F>(
@@ -89,7 +90,8 @@ impl Engine {
         T: Script + 'static,
         F: Fn() -> T + Send + Sync + 'static,
     {
-        self.runtime_registry.register_script_factory::<T, F>(factory)
+        self.runtime_registry
+            .register_script_factory::<T, F>(factory)
     }
 
     pub fn register_script_named_factory<T, F>(
@@ -146,7 +148,8 @@ impl Engine {
     where
         F: Fn() -> Object + Send + Sync + 'static,
     {
-        self.runtime_registry.register_archetype_named(name, factory)
+        self.runtime_registry
+            .register_archetype_named(name, factory)
     }
 
     pub fn create_world(&self) -> World {
@@ -168,7 +171,8 @@ impl Engine {
     }
 
     fn register_builtin_types(&mut self) {
-        self.runtime_registry.register_builtin_component::<Transform>();
+        self.runtime_registry
+            .register_builtin_component::<Transform>();
         self.runtime_registry
             .register_builtin_component_factory::<Camera, _>(Camera::default);
         self.runtime_registry
@@ -176,21 +180,27 @@ impl Engine {
         self.runtime_registry
             .register_builtin_component_factory::<SpriteRenderer, _>(SpriteRenderer::default);
         self.runtime_registry
+            .register_builtin_component_factory::<SpriteAnimator, _>(SpriteAnimator::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<Sorting, _>(Sorting::default);
+        self.runtime_registry
             .register_builtin_component_factory::<Collider2D, _>(Collider2D::default);
-        self.runtime_registry.register_builtin_component_factory::<Canvas, _>(|| {
-            Canvas::new(CanvasSpace::Screen)
-        });
+        self.runtime_registry
+            .register_builtin_component_factory::<Canvas, _>(|| Canvas::new(CanvasSpace::Screen));
         self.runtime_registry
             .register_builtin_component_factory::<AudioListener, _>(AudioListener::default);
         self.runtime_registry
             .register_builtin_component_factory::<AudioSource, _>(AudioSource::new2d);
         self.runtime_registry
-            .register_builtin_component_factory::<CursorInteractable, _>(CursorInteractable::default);
+            .register_builtin_component_factory::<CursorInteractable, _>(
+                CursorInteractable::default,
+            );
         self.runtime_registry
             .register_builtin_component_factory::<MeshRenderer, _>(|| {
                 MeshRenderer::new(runa_core::components::Mesh::cube(1.0))
             });
-        self.runtime_registry.register_builtin_component::<ObjectDefinitionInstance>();
+        self.runtime_registry
+            .register_builtin_component::<ObjectDefinitionInstance>();
         self.runtime_registry
             .register_builtin_component::<SerializedTypeStorage>();
         self.runtime_registry

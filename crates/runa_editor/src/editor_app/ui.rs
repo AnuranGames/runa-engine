@@ -286,7 +286,7 @@ impl<'window> EditorApp<'window> {
             egui::Panel::right("inspector_panel")
                 .resizable(true)
                 .default_size(320.0)
-                .min_size(220.0)
+                .min_size(320.0)
                 .show(ctx, |ui| {
                     ui.heading("Inspector");
                     ui.separator();
@@ -296,7 +296,20 @@ impl<'window> EditorApp<'window> {
                                 .project_session
                                 .as_ref()
                                 .map(|session| session.project.root_dir.as_path());
-                            let inspector_actions = inspector_ui(ui, object, project_root);
+                            let scripts_dir = self
+                                .project_session
+                                .as_ref()
+                                .map(|session| session.project.scripts_dir())
+                                .map(|path| path.into_boxed_path());
+                            let scripts_dir = scripts_dir.as_deref();
+                            let inspector_actions = inspector_ui(
+                                ui,
+                                object,
+                                project_root,
+                                scripts_dir,
+                                &self.settings,
+                                &mut self.tile_paint,
+                            );
                             for removal in inspector_actions.removals {
                                 match removal.target {
                                     crate::inspector::InspectorRemovalTarget::RuntimeType {
@@ -315,7 +328,8 @@ impl<'window> EditorApp<'window> {
                                             object.get_component_mut::<SerializedTypeStorage>()
                                         {
                                             if storage.remove(kind, &type_name) {
-                                                self.status_line = format!("Removed {}.", type_name);
+                                                self.status_line =
+                                                    format!("Removed {}.", type_name);
                                             }
                                         }
                                     }
@@ -407,6 +421,7 @@ impl<'window> EditorApp<'window> {
         self.viewport_settings_window(ctx);
         self.rendering_settings_window(ctx);
         self.gizmo_settings_window(ctx);
+        self.tile_palette_window(ctx);
         self.editor_settings_window(ctx);
         self.project_settings_window(ctx);
         self.build_settings_window(ctx);
@@ -440,7 +455,9 @@ impl<'window> EditorApp<'window> {
 
         let size = window.inner_size();
         let pixels_per_point = window.scale_factor() as f32;
-        let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, pixels_per_point);
+        let paint_jobs = self
+            .egui_ctx
+            .tessellate(full_output.shapes, pixels_per_point);
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [size.width.max(1), size.height.max(1)],
             pixels_per_point,
@@ -649,24 +666,53 @@ impl<'window> EditorApp<'window> {
 
             let mut addable_count = 0usize;
             for (type_id, name, is_addable, project_metadata) in registered_types {
+                let icon_name = type_id
+                    .map(|type_id| {
+                        helpers::component_icon_name(type_id, registered_kind_to_runtime_kind(kind))
+                    })
+                    .unwrap_or(match kind {
+                        RegisteredTypeKind::Component => "c-Object",
+                        RegisteredTypeKind::Script => "c-Script",
+                    });
+                let icon = crate::editor_textures::load_component_icon(
+                    ui.ctx(),
+                    &format!("add_type_icon_{icon_name}"),
+                    icon_name,
+                );
+                let docs_url = type_id
+                    .and_then(crate::inspector::component_docs_url)
+                    .unwrap_or("https://github.com/RunaGameEngine/runa/blob/main/docs/tutorials/README.md");
+
                 if !is_addable {
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new(format!("{name} (TODO: no runtime factory)")),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(16.0, 16.0)));
+                        ui.add_enabled(
+                            false,
+                            egui::Button::new(format!("{name} (TODO: no runtime factory)")),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            help_icon_button(ui, docs_url, &mut self.status_line);
+                        });
+                    });
                     continue;
                 }
 
                 if let Some(project_metadata) = project_metadata.as_ref() {
                     addable_count += 1;
-                    if ui.button(&name).clicked() {
-                        if self.add_project_serialized_type_to_object(object_id, project_metadata) {
-                            self.status_line = format!("Added {name}.");
-                        } else {
-                            self.status_line = format!("Failed to add {name}.");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(16.0, 16.0)));
+                        if ui.button(&name).clicked() {
+                            if self.add_project_serialized_type_to_object(object_id, project_metadata) {
+                                self.status_line = format!("Added {name}.");
+                            } else {
+                                self.status_line = format!("Failed to add {name}.");
+                            }
+                            ui.close();
                         }
-                        ui.close();
-                    }
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            help_icon_button(ui, docs_url, &mut self.status_line);
+                        });
+                    });
                     continue;
                 }
 
@@ -675,16 +721,22 @@ impl<'window> EditorApp<'window> {
                 };
 
                 addable_count += 1;
-                if ui.button(&name).clicked() {
-                    if self.add_registered_type_to_object(object_id, type_id) {
-                        self.status_line = format!("Added {name}.");
-                    } else {
-                        self.status_line = format!(
-                            "Failed to add {name}: runtime registry did not provide a usable factory."
-                        );
+                ui.horizontal(|ui| {
+                    ui.add(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(16.0, 16.0)));
+                    if ui.button(&name).clicked() {
+                        if self.add_registered_type_to_object(object_id, type_id) {
+                            self.status_line = format!("Added {name}.");
+                        } else {
+                            self.status_line = format!(
+                                "Failed to add {name}: runtime registry did not provide a usable factory."
+                            );
+                        }
+                        ui.close();
                     }
-                    ui.close();
-                }
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        help_icon_button(ui, docs_url, &mut self.status_line);
+                    });
+                });
             }
 
             if addable_count == 0 {
@@ -845,11 +897,13 @@ impl<'window> EditorApp<'window> {
                 property_row_like(ui, "Window Size", |ui| {
                     ui.add_sized(
                         [90.0, 22.0],
-                        egui::DragValue::new(&mut session.project.manifest.app.width).range(1..=8192),
+                        egui::DragValue::new(&mut session.project.manifest.app.width)
+                            .range(1..=8192),
                     );
                     ui.add_sized(
                         [90.0, 22.0],
-                        egui::DragValue::new(&mut session.project.manifest.app.height).range(1..=8192),
+                        egui::DragValue::new(&mut session.project.manifest.app.height)
+                            .range(1..=8192),
                     );
                 });
                 property_row_like(ui, "Fullscreen", |ui| {
@@ -883,8 +937,7 @@ impl<'window> EditorApp<'window> {
                             self.status_line = "Project settings saved.".to_string();
                         }
                         Err(error) => {
-                            self.status_line =
-                                format!("Failed to save project settings: {error}");
+                            self.status_line = format!("Failed to save project settings: {error}");
                         }
                     }
                 }
@@ -949,7 +1002,11 @@ impl<'window> EditorApp<'window> {
         if save_clicked {
             let result = ensure_release_windows_subsystem(
                 &session.project.root_dir,
-                session.project.manifest.build.hide_console_window_on_windows,
+                session
+                    .project
+                    .manifest
+                    .build
+                    .hide_console_window_on_windows,
             )
             .and_then(|_| session.project.save_manifest());
             match result {
@@ -1050,7 +1107,9 @@ impl<'window> EditorApp<'window> {
                         if ui
                             .add_sized(
                                 [120.0, 22.0],
-                                egui::DragValue::new(&mut fov).speed(1.0).range(20.0..=130.0),
+                                egui::DragValue::new(&mut fov)
+                                    .speed(1.0)
+                                    .range(20.0..=130.0),
                             )
                             .changed()
                         {
@@ -1076,7 +1135,9 @@ impl<'window> EditorApp<'window> {
                         if ui
                             .add_sized(
                                 [120.0, 22.0],
-                                egui::DragValue::new(&mut far).speed(1.0).range(1.0..=10000.0),
+                                egui::DragValue::new(&mut far)
+                                    .speed(1.0)
+                                    .range(1.0..=10000.0),
                             )
                             .changed()
                         {
@@ -1165,6 +1226,110 @@ impl<'window> EditorApp<'window> {
             });
         self.gizmo_settings_open = open;
     }
+
+    fn tile_palette_window(&mut self, ctx: &egui::Context) {
+        if !self.tile_paint.palette_open {
+            return;
+        }
+
+        let mut open = self.tile_paint.palette_open;
+        egui::Window::new("Tile Palette")
+            .open(&mut open)
+            .default_width(300.0)
+            .default_height(360.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                let Some(object_id) = self.selection else {
+                    ui.label("Select a Tilemap object to choose tiles.");
+                    return;
+                };
+                let Some(object) = self.world.get_mut(object_id) else {
+                    ui.label("Selected object is no longer available.");
+                    return;
+                };
+                let Some(tilemap) = object.get_component_mut::<Tilemap>() else {
+                    ui.label("Selected object has no Tilemap data.");
+                    return;
+                };
+                let Some(atlas) = tilemap.atlas.as_ref() else {
+                    ui.label("Assign an atlas texture in TilemapRenderer first.");
+                    return;
+                };
+
+                ui.horizontal(|ui| {
+                    ui.label(format!("Mode: {:?}", self.tile_paint.mode));
+                    ui.separator();
+                    ui.label(format!("Layer: {}", self.tile_paint.layer));
+                    ui.separator();
+                    ui.label(format!("Selected: {}", tilemap.selected_tile));
+                });
+                ui.separator();
+
+                let texture_handle = atlas.texture_path.as_ref().and_then(|path| {
+                    self.project_session.as_ref().and_then(|session| {
+                        let full_path = session.project.root_dir.join(path);
+                        crate::editor_textures::load_texture_from_path(
+                            ui.ctx(),
+                            "tile_palette_atlas_texture",
+                            &full_path,
+                            None,
+                        )
+                        .ok()
+                    })
+                });
+
+                let Some(texture_handle) = texture_handle else {
+                    ui.colored_label(
+                        style::ERROR_COLOR,
+                        "Palette preview needs a project-relative atlas path.",
+                    );
+                    return;
+                };
+
+                let columns = atlas.columns.max(1);
+                let rows = atlas.rows.max(1);
+                let frame_count = atlas.frame_count();
+                let tile_preview = egui::vec2(16.0, 16.0);
+
+                egui::ScrollArea::vertical()
+                    .id_salt("tile_palette_scroll")
+                    .show(ui, |ui| {
+                        for row in 0..rows {
+                            ui.horizontal(|ui| {
+                                for column in 0..columns {
+                                    let frame = row * columns + column;
+                                    if frame >= frame_count {
+                                        continue;
+                                    }
+                                    let uv = atlas.uv_rect_for_frame(frame);
+                                    let image = egui::Image::new(&texture_handle)
+                                        .uv(egui::Rect::from_min_size(
+                                            egui::pos2(uv.x, uv.y),
+                                            egui::vec2(uv.width, uv.height),
+                                        ))
+                                        .fit_to_exact_size(tile_preview);
+                                    let selected = tilemap.selected_tile == frame;
+                                    let mut button = egui::Button::image(image).frame(true);
+                                    if selected {
+                                        button = button.stroke(egui::Stroke::new(
+                                            2.0,
+                                            egui::Color32::from_rgb(96, 180, 255),
+                                        ));
+                                    }
+                                    if ui
+                                        .add(button)
+                                        .on_hover_text(format!("Tile {frame}"))
+                                        .clicked()
+                                    {
+                                        tilemap.selected_tile = frame;
+                                    }
+                                }
+                            });
+                        }
+                    });
+            });
+        self.tile_paint.palette_open = open;
+    }
 }
 
 fn property_row_like(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui)) {
@@ -1172,4 +1337,28 @@ fn property_row_like(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui
         ui.add_sized([110.0, 22.0], egui::Label::new(label));
         body(ui);
     });
+}
+
+fn registered_kind_to_runtime_kind(kind: RegisteredTypeKind) -> ComponentRuntimeKind {
+    match kind {
+        RegisteredTypeKind::Component => ComponentRuntimeKind::Component,
+        RegisteredTypeKind::Script => ComponentRuntimeKind::Script,
+    }
+}
+
+fn help_icon_button(ui: &mut egui::Ui, target: &str, status_line: &mut String) {
+    let icon =
+        crate::editor_textures::load_editor_icon(ui.ctx(), "add_type_help_icon", "question-icon");
+    if ui
+        .add(
+            egui::Button::image(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(14.0, 14.0)))
+                .frame(false),
+        )
+        .on_hover_text("Open documentation")
+        .clicked()
+    {
+        if let Err(error) = crate::inspector::open_external_target(target) {
+            *status_line = error;
+        }
+    }
 }

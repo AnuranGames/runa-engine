@@ -6,7 +6,7 @@ This tutorial shows the smallest useful Runa application using the current runti
 
 ```toml
 [dependencies]
-runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.3.0-alpha.1" }
+runa_engine = { git = "https://github.com/RunaGameEngine/runa.git", tag = "v0.4.0-alpha.1" }
 ```
 
 ## Minimal App

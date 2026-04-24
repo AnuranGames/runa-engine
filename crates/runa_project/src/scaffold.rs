@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::project::{ProjectAppConfig, ProjectBuildConfig, ProjectError, ProjectManifest, ProjectPaths};
+use crate::project::{
+    ProjectAppConfig, ProjectBuildConfig, ProjectError, ProjectManifest, ProjectPaths,
+};
 use crate::world_asset::{create_empty_world, save_world};
 
 pub fn create_empty_project(
@@ -65,6 +67,7 @@ pub fn ensure_editor_bridge_files(project_root: &Path) -> Result<(), ProjectErro
     ensure_project_dependencies(project_root)?;
     ensure_public_register_game_types(project_root)?;
     ensure_project_uses_manifest_app_config(project_root)?;
+    ensure_project_uses_runtime_registry_world_loading(project_root)?;
 
     let place_objects_path = proj_dir.join("place_objects.rs");
     fs::write(
@@ -82,7 +85,8 @@ pub fn ensure_release_windows_subsystem(
     project_root: &Path,
     enabled: bool,
 ) -> Result<(), ProjectError> {
-    const ATTR: &str = "#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = \"windows\")]";
+    const ATTR: &str =
+        "#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = \"windows\")]";
 
     let main_rs_path = project_root.join("src").join("main.rs");
     if !main_rs_path.exists() {
@@ -111,16 +115,13 @@ fn ensure_public_register_game_types(project_root: &Path) -> Result<(), ProjectE
     }
 
     let content = fs::read_to_string(&main_rs_path)?;
-    if content.contains("pub fn register_game_types(") || !content.contains("fn register_game_types(")
+    if content.contains("pub fn register_game_types(")
+        || !content.contains("fn register_game_types(")
     {
         return Ok(());
     }
 
-    let updated = content.replacen(
-        "fn register_game_types(",
-        "pub fn register_game_types(",
-        1,
-    );
+    let updated = content.replacen("fn register_game_types(", "pub fn register_game_types(", 1);
     fs::write(main_rs_path, updated)?;
     Ok(())
 }
@@ -150,6 +151,84 @@ fn ensure_project_uses_manifest_app_config(project_root: &Path) -> Result<(), Pr
     if updated != content {
         fs::write(main_rs_path, updated)?;
     }
+    Ok(())
+}
+
+fn ensure_project_uses_runtime_registry_world_loading(
+    project_root: &Path,
+) -> Result<(), ProjectError> {
+    let main_rs_path = project_root.join("src").join("main.rs");
+    if !main_rs_path.exists() {
+        return Ok(());
+    }
+
+    let mut content = fs::read_to_string(&main_rs_path)?;
+
+    if !content.contains("use std::sync::Arc;") {
+        if content.starts_with("#![") {
+            if let Some(line_end) = content.find('\n') {
+                let (first_line, rest) = content.split_at(line_end + 1);
+                content = format!("{first_line}\nuse std::sync::Arc;\n{rest}");
+            } else {
+                content.push_str("\nuse std::sync::Arc;\n");
+            }
+        } else {
+            content = format!("use std::sync::Arc;\n\n{content}");
+        }
+    }
+
+    if !content.contains("load_world_with_runtime_registry") {
+        content = content.replace(
+            "runa_project::{load_project, load_world}",
+            "runa_project::{load_project, load_world_with_runtime_registry}",
+        );
+    }
+
+    let old_blocks = [
+        r#"    let world = load_world(project.startup_world_path()).expect("Failed to load startup world");
+"#,
+        r#"    let mut world = load_world(project.startup_world_path()).expect("Failed to load startup world");
+"#,
+        r#"    let world = load_world(project.startup_world_path())
+        .expect("Failed to load startup world");
+"#,
+        r#"    let mut world = load_world(project.startup_world_path())
+        .expect("Failed to load startup world");
+"#,
+    ];
+    let new_block = r#"    let mut world = load_world_with_runtime_registry(
+        project.startup_world_path(),
+        engine.runtime_registry(),
+    ).expect("Failed to load startup world");
+    world.set_runtime_registry(Arc::new(engine.runtime_registry().clone()));
+"#;
+
+    let mut replaced = false;
+    for old_block in old_blocks {
+        if content.contains(old_block) {
+            content = content.replace(old_block, new_block);
+            replaced = true;
+        }
+    }
+
+    if !replaced
+        && !content
+            .contains("world.set_runtime_registry(Arc::new(engine.runtime_registry().clone()));")
+    {
+        if let Some(start) = content.find("load_world(") {
+            if let Some(line_start) = content[..start].rfind('\n').map(|index| index + 1) {
+                if let Some(statement_end_offset) = content[start..].find(';') {
+                    let statement_end = start + statement_end_offset + 1;
+                    let statement = &content[line_start..statement_end];
+                    if statement.contains("project.startup_world_path()") {
+                        content.replace_range(line_start..statement_end, new_block.trim_end());
+                    }
+                }
+            }
+        }
+    }
+
+    fs::write(main_rs_path, content)?;
     Ok(())
 }
 
@@ -422,6 +501,8 @@ fn empty_object() -> WorldObjectAsset {
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: None,
         active_camera: false,
@@ -442,6 +523,8 @@ fn camera_object() -> WorldObjectAsset {
         },
         mesh_renderer: None,
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: Some(CameraAsset::default()),
         active_camera: true,
@@ -466,6 +549,8 @@ fn cube_object() -> WorldObjectAsset {
             color: [0.95, 0.55, 0.22, 1.0],
         }),
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: None,
         active_camera: false,
@@ -493,6 +578,8 @@ fn floor_object() -> WorldObjectAsset {
             color: [0.24, 0.27, 0.32, 1.0],
         }),
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: None,
         active_camera: false,
@@ -519,7 +606,10 @@ fn sprite_object() -> WorldObjectAsset {
         sprite_renderer: Some(SpriteRendererAsset {
             sprite: None,
             pixels_per_unit: 16.0,
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
         }),
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: None,
         active_camera: false,
@@ -537,15 +627,21 @@ fn tilemap_object() -> WorldObjectAsset {
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: Some(TilemapAsset {
             width: 16,
             height: 16,
             tile_size: [32, 32],
             offset: [-8, -8],
+            pixels_per_unit: 16.0,
+            atlas: None,
+            selected_tile: 0,
             layers: vec![TilemapLayerAsset {
                 name: "Base".to_string(),
                 visible: true,
                 opacity: 1.0,
+                tiles: Vec::new(),
             }],
         }),
         camera: None,
@@ -564,6 +660,8 @@ fn audio_source_object() -> WorldObjectAsset {
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,
+        sprite_animator: None,
+        sorting: None,
         tilemap: None,
         camera: None,
         active_camera: false,
@@ -689,6 +787,51 @@ mod tests {
         assert!(cargo_toml.contains("name = \"runa_object_bridge\""));
         assert!(root.join(".proj").join("place_objects.rs").exists());
         assert!(root.join(".proj").join("runa_object_bridge.rs").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bridge_setup_migrates_runtime_registry_world_loading_variants() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("runa_project_runtime_load_fix_{unique}"));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src").join("main.rs"),
+            r#"use runa_engine::{
+    runa_app::{RunaApp, RunaWindowConfig},
+    runa_project::{load_project, load_world},
+    Engine,
+};
+
+fn register_game_types(_engine: &mut Engine) {}
+
+fn main() {
+    let current_dir = std::env::current_dir().expect("Failed to get current directory");
+    let project = load_project(&current_dir).expect("Failed to load .runaproj manifest");
+
+    let mut engine = Engine::new();
+    register_game_types(&mut engine);
+
+    let mut world = load_world(project.startup_world_path())
+        .expect("Failed to load startup world");
+
+    let config = RunaWindowConfig::default();
+    RunaApp::run_with_config(world, config).expect("Failed to run project");
+}
+"#,
+        )
+        .unwrap();
+
+        ensure_editor_bridge_files(&root).unwrap();
+
+        let main_rs = fs::read_to_string(root.join("src").join("main.rs")).unwrap();
+        assert!(main_rs.contains("load_world_with_runtime_registry("));
+        assert!(main_rs
+            .contains("world.set_runtime_registry(Arc::new(engine.runtime_registry().clone()));"));
 
         let _ = fs::remove_dir_all(root);
     }

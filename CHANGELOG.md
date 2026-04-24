@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-alpha.1] - 2026-04-24
+
 ### Added
 
 - **Runtime lifecycle**
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added editor-only SVG icon loading with PNG fallback
   - Added component icon support in the viewport and inspector
   - Added `folder-empty` handling and root-folder navigation in the content browser
+  - Added PNG-first component icon loading for sharper editor previews
 
 - **Editor workflow**
   - Added runtime-registry-driven object creation for:
@@ -34,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added manifest-backed `Project Settings` for `RunaAppConfig` values used by `Play In Window`
   - Added `Build Settings` and `Build Game` flow for cargo-driven project builds
   - Added `Content Browser -> Live Rust` split between script-file and archetype-file creation
+  - Added a separate Tile Palette window with 16x16 atlas tile previews
+  - Added viewport tile painting with `None`, `Paint`, and `Erase` modes
 
 ### Changed
 
@@ -51,12 +56,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `runa_editor` was split into smaller `editor_app` modules for UI, viewport, project flow, world operations, helpers, and placeables
   - Inspector rows now follow a unified `label on the left / controls on the right` layout
   - Mesh renderer editing now supports selecting built-in meshes from the inspector
+  - Tilemap editing now uses runtime `Tilemap` data directly instead of manual coordinate inputs
 
 - **Examples and scaffolding**
-- Project scaffolding now generates typed-archetype-first runtime bootstrap
-- Project scaffolding now writes manifest-backed window config and Windows release subsystem setup
-- Bundled examples were updated to the newer camera constructors and typed archetype flow
-- `sandbox` camera follow now runs in `late_update()`
+  - Project scaffolding now generates typed-archetype-first runtime bootstrap
+  - Project scaffolding now writes manifest-backed window config and Windows release subsystem setup
+  - Bundled examples were updated to the newer camera constructors and typed archetype flow
+  - `sandbox` camera follow now runs in `late_update()`
+
+- **Rendering components**
+  - Added `SpriteAnimator` as a built-in runtime component for grid-based sprite sheet playback
+  - Added `Sorting` as a built-in runtime component for 2D render ordering
+  - Added tile atlas and `pixels_per_unit` support to tilemap rendering
 
 ### Fixed
 
@@ -69,6 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Serialized script/component overrides now reapply onto existing runtime instances during world loading
 - Archetype-backed world objects now preserve serialized script/component override data through editor reconstruction
 - Final game rendering now matches source sprite colors more closely than the old editor viewport path
+- Fixed component picker icon mismatches, including `AudioListener` and `Sorting`
+- Fixed nested inspector text-edit focus loss for `SpriteAnimator` clips and `Tilemap` layers
+- Fixed tilemap/sprite draw ordering so later-spawned 2D objects no longer always render above earlier objects
 
 ## [0.3.0-alpha.1] - 2026-04-20
 

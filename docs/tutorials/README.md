@@ -28,6 +28,8 @@ These guides assume the current runtime model:
 ## Components and Systems
 
 - [SpriteRenderer](components/sprite-renderer.md)
+- [SpriteAnimator](components/sprite-animator.md)
+- [Sorting](components/sorting.md)
 - [CursorInteractable](components/cursor-interactable.md)
 - [Collider2D / PhysicsCollision](components/physics-collision.md)
 - [Audio](systems/audio.md)

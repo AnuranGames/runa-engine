@@ -19,7 +19,10 @@ pub struct SerializedTypeStorage {
 }
 
 impl SerializedTypeStorage {
-    pub fn entries_of_kind(&self, kind: SerializedTypeKind) -> impl Iterator<Item = &SerializedTypeEntry> {
+    pub fn entries_of_kind(
+        &self,
+        kind: SerializedTypeKind,
+    ) -> impl Iterator<Item = &SerializedTypeEntry> {
         self.entries.iter().filter(move |entry| entry.kind == kind)
     }
 

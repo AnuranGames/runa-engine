@@ -472,7 +472,7 @@ impl<'window> Renderer<'window> {
             .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::bytes_of(&ui_uniforms));
 
         let mut all_instances = Vec::new();
-        let mut batches = Vec::new();
+        let mut sprite_instances = Vec::new();
         let mut ui_vertices = Vec::new();
         let mut ui_text_vertices = Vec::new();
 
@@ -484,19 +484,21 @@ impl<'window> Renderer<'window> {
                     position,
                     rotation,
                     scale,
+                    uv_rect,
+                    order,
                 } => {
                     let tex_width = texture.width as f32;
                     let tex_height = texture.height as f32;
                     let pixels_per_unit = scale.z.max(f32::EPSILON);
-                    let world_scale_x = scale.x * (tex_width / pixels_per_unit);
-                    let world_scale_y = scale.y * (tex_height / pixels_per_unit);
+                    let world_scale_x = scale.x * ((tex_width * uv_rect[2]) / pixels_per_unit);
+                    let world_scale_y = scale.y * ((tex_height * uv_rect[3]) / pixels_per_unit);
 
                     let instance = InstanceData {
                         position: [position.x, position.y, position.z],
                         rotation: rotation.z,
                         scale: [world_scale_x, world_scale_y, 1.0],
-                        uv_offset: [0.0, 0.0],
-                        uv_size: [1.0, 1.0],
+                        uv_offset: [uv_rect[0], uv_rect[1]],
+                        uv_size: [uv_rect[2], uv_rect[3]],
                         flip: 0,
                         _pad: 0.0,
                     };
@@ -506,9 +508,7 @@ impl<'window> Renderer<'window> {
                         self.textures_cache.insert(key, texture.clone());
                     }
 
-                    let offset = all_instances.len();
-                    all_instances.push(instance);
-                    batches.push((key, offset, 1));
+                    sprite_instances.push((*order, position.z, key, instance));
                 }
                 RenderCommands::Tile {
                     texture,
@@ -518,11 +518,12 @@ impl<'window> Renderer<'window> {
                     flip_x,
                     flip_y,
                     color: _,
+                    order,
                 } => {
                     let instance = InstanceData {
                         position: [position.x, position.y, position.z],
                         rotation: 0.0,
-                        scale: [size.x as f32, size.y as f32, 1.0],
+                        scale: [size.x, size.y, 1.0],
                         uv_offset: [uv_rect[0], uv_rect[1]],
                         uv_size: [uv_rect[2], uv_rect[3]],
                         flip: ((*flip_x) as u32) | (((*flip_y) as u32) << 1),
@@ -534,9 +535,7 @@ impl<'window> Renderer<'window> {
                         self.textures_cache.insert(key, texture.clone());
                     }
 
-                    let offset = all_instances.len();
-                    all_instances.push(instance);
-                    batches.push((key, offset, 1));
+                    sprite_instances.push((*order, position.z, key, instance));
                 }
                 RenderCommands::DebugRect {
                     position,
@@ -717,6 +716,20 @@ impl<'window> Renderer<'window> {
                     }
                 }
             }
+        }
+
+        sprite_instances.sort_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        });
+        let mut batches = Vec::new();
+        for (_, _, texture_key, instance) in sprite_instances {
+            let offset = all_instances.len();
+            all_instances.push(instance);
+            batches.push((texture_key, offset, 1));
         }
 
         if all_instances.len() > self.instance_buffer_capacity {
