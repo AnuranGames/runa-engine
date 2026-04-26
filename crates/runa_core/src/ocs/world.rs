@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use super::command::WorldCommand;
-use glam::{Vec2, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use runa_render_api::RenderQueue;
 
 use crate::{
     audio::{AudioEngine, SoundId},
     components::{
-        ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D, MeshRenderer,
-        Sorting, SpriteAnimator, SpriteRenderer, Tilemap, Transform,
+        ActiveCamera, AudioListener, AudioSource, BackgroundMode, Camera, Canvas, Collider2D,
+        DirectionalLight, MeshRenderer, PointLight, Sorting, SpriteAnimator, SpriteRenderer,
+        Tilemap, Transform, WorldAtmosphere,
     },
     debug_renderer::DebugRenderer,
     ocs::{Object, ObjectId, Script},
@@ -24,6 +25,7 @@ pub struct World {
     processing_lifecycle: bool,
     started: bool,
     runtime_registry: Option<Arc<RuntimeRegistry>>,
+    atmosphere: WorldAtmosphere,
 }
 
 impl World {
@@ -42,7 +44,20 @@ impl World {
             processing_lifecycle: false,
             started: false,
             runtime_registry: None,
+            atmosphere: WorldAtmosphere::default(),
         }
+    }
+
+    pub fn atmosphere(&self) -> &WorldAtmosphere {
+        &self.atmosphere
+    }
+
+    pub fn atmosphere_mut(&mut self) -> &mut WorldAtmosphere {
+        &mut self.atmosphere
+    }
+
+    pub fn set_atmosphere(&mut self, atmosphere: WorldAtmosphere) {
+        self.atmosphere = atmosphere;
     }
 
     pub fn spawn(&mut self, object: Object) -> ObjectId {
@@ -225,12 +240,52 @@ impl World {
     }
 
     pub fn render(&self, render_queue: &mut RenderQueue, interpolation_factor: f32) {
+        render_queue.set_atmosphere(to_render_atmosphere(self.atmosphere));
+
+        for object in &self.objects {
+            if let Some(light) = object.get_component::<DirectionalLight>() {
+                render_queue.add_directional_light(
+                    runa_render_api::command::DirectionalLightData {
+                        direction: light.direction,
+                        color: light.color,
+                        intensity: light.intensity,
+                    },
+                );
+            }
+
+            if let (Some(transform), Some(light)) = (
+                object.get_component::<Transform>(),
+                object.get_component::<PointLight>(),
+            ) {
+                render_queue.add_point_light(runa_render_api::command::PointLightData {
+                    position: self
+                        .world_transform_matrix_for_object(object, interpolation_factor)
+                        .map(|matrix| matrix.transform_point3(Vec3::ZERO))
+                        .unwrap_or_else(|| transform.interpolated_position(interpolation_factor)),
+                    color: light.color,
+                    intensity: light.intensity,
+                    radius: light.radius,
+                    falloff: light.falloff,
+                });
+            }
+        }
+
         for object in &self.objects {
             // 3D Mesh rendering
             if let (Some(transform), Some(mesh_renderer)) = (
                 object.get_component::<Transform>(),
                 object.get_component::<MeshRenderer>(),
             ) {
+                let model_matrix = self
+                    .world_transform_matrix_for_object(object, interpolation_factor)
+                    .unwrap_or_else(|| {
+                        Mat4::from_scale_rotation_translation(
+                            transform.scale,
+                            transform.interpolated_rotation(interpolation_factor),
+                            transform.interpolated_position(interpolation_factor),
+                        )
+                    });
+                let interpolated_position = model_matrix.transform_point3(Vec3::ZERO);
                 // Convert Mesh vertices to render_api Vertex3D
                 let vertices: Vec<runa_render_api::command::Vertex3D> = mesh_renderer
                     .mesh
@@ -240,21 +295,23 @@ impl World {
                         position: v.position,
                         normal: v.normal,
                         uv: v.uv,
+                        color: v.color,
                     })
                     .collect();
-
-                // Create model matrix
-                let model_matrix = glam::Mat4::from_scale_rotation_translation(
-                    transform.scale,
-                    transform.interpolated_rotation(interpolation_factor),
-                    transform.interpolated_position(interpolation_factor),
-                );
+                let material = mesh_renderer.material_for_rendering();
 
                 render_queue.draw_mesh_3d(
                     vertices,
                     mesh_renderer.mesh.indices.clone(),
                     model_matrix,
-                    mesh_renderer.color,
+                    material.base_color,
+                    material.emission,
+                    material.use_vertex_color,
+                    object
+                        .get_component::<Sorting>()
+                        .map(|sorting| sorting.order)
+                        .unwrap_or(0),
+                    interpolated_position.z,
                 );
             }
 
@@ -267,17 +324,26 @@ impl World {
                     continue;
                 };
 
+                let world_matrix = self
+                    .world_transform_matrix_for_object(object, interpolation_factor)
+                    .unwrap_or_else(|| {
+                        Mat4::from_scale_rotation_translation(
+                            transform.scale,
+                            transform.interpolated_rotation(interpolation_factor),
+                            transform.interpolated_position(interpolation_factor),
+                        )
+                    });
+                let (world_scale, world_rotation, world_position) =
+                    world_matrix.to_scale_rotation_translation();
+
                 render_queue.draw_sprite(
                     Arc::from(texture),
-                    transform.interpolated_position(interpolation_factor),
-                    transform.interpolated_rotation(interpolation_factor),
+                    world_position,
+                    world_rotation,
                     // Reuse the third scale channel to carry sprite PPU into the
                     // renderer without changing the public render command shape.
-                    Vec3::new(
-                        transform.scale.x,
-                        transform.scale.y,
-                        sprite.pixels_per_unit(),
-                    ),
+                    Vec3::new(world_scale.x, world_scale.y, sprite.pixels_per_unit()),
+                    [1.0, 1.0, 1.0, 1.0],
                     sprite.uv_rect,
                     object
                         .get_component::<Sorting>()
@@ -308,14 +374,24 @@ impl World {
 
                                 // Tile world position relative to the object
                                 let world_pos = tilemap.tile_to_world(x, y);
-                                let final_pos = transform
-                                    .interpolated_position(interpolation_factor)
-                                    + world_pos;
+                                let object_matrix = self
+                                    .world_transform_matrix_for_object(object, interpolation_factor)
+                                    .unwrap_or_else(|| {
+                                        Mat4::from_scale_rotation_translation(
+                                            transform.scale,
+                                            transform.interpolated_rotation(interpolation_factor),
+                                            transform.interpolated_position(interpolation_factor),
+                                        )
+                                    });
+                                let final_pos = object_matrix.transform_point3(world_pos);
+                                let (tile_scale, _, _) =
+                                    object_matrix.to_scale_rotation_translation();
 
                                 render_queue.draw_tile(
                                     tile.texture.clone().unwrap(),
                                     final_pos,
-                                    tilemap.world_tile_size(),
+                                    tilemap.world_tile_size()
+                                        * Vec2::new(tile_scale.x.abs(), tile_scale.y.abs()),
                                     [
                                         tile.uv_rect.x,
                                         tile.uv_rect.y,
@@ -324,7 +400,7 @@ impl World {
                                     ],
                                     tile.flip_x,
                                     tile.flip_y,
-                                    [1.0, 1.0, 1.0, 1.0],
+                                    [1.0, 1.0, 1.0, layer.opacity.clamp(0.0, 1.0)],
                                     object
                                         .get_component::<Sorting>()
                                         .map(|sorting| sorting.order)
@@ -394,12 +470,79 @@ impl World {
             .find(|object| object.id() == Some(id))
     }
 
+    pub fn root_object_ids(&self) -> Vec<ObjectId> {
+        self.objects
+            .iter()
+            .filter(|object| object.parent().is_none())
+            .filter_map(|object| object.id())
+            .collect()
+    }
+
+    pub fn set_parent(&mut self, child_id: ObjectId, parent_id: Option<ObjectId>) -> bool {
+        if Some(child_id) == parent_id {
+            return false;
+        }
+        if self.get(child_id).is_none() {
+            return false;
+        }
+        if parent_id.is_some_and(|id| self.get(id).is_none()) {
+            return false;
+        }
+        if parent_id.is_some_and(|id| self.is_descendant_of(id, child_id)) {
+            return false;
+        }
+
+        let old_parent = self.get(child_id).and_then(Object::parent);
+        if old_parent == parent_id {
+            return true;
+        }
+
+        if let Some(old_parent) = old_parent {
+            if let Some(parent) = self.get_mut(old_parent) {
+                parent.remove_child_id(child_id);
+            }
+        }
+        if let Some(child) = self.get_mut(child_id) {
+            child.set_parent_id(parent_id);
+        }
+        if let Some(parent_id) = parent_id {
+            if let Some(parent) = self.get_mut(parent_id) {
+                parent.add_child_id(child_id);
+            }
+        }
+
+        true
+    }
+
+    pub fn is_descendant_of(&self, child_id: ObjectId, ancestor_id: ObjectId) -> bool {
+        let mut current = self.get(child_id).and_then(Object::parent);
+        while let Some(parent_id) = current {
+            if parent_id == ancestor_id {
+                return true;
+            }
+            current = self.get(parent_id).and_then(Object::parent);
+        }
+        false
+    }
+
+    pub fn world_transform_matrix(
+        &self,
+        object_id: ObjectId,
+        interpolation_factor: f32,
+    ) -> Option<Mat4> {
+        let object = self.get(object_id)?;
+        self.world_transform_matrix_for_object(object, interpolation_factor)
+    }
+
     pub fn take_object(&mut self, id: ObjectId) -> Option<Object> {
         if self.processing_lifecycle {
             return None;
         }
 
-        self.despawn_immediate(id)
+        let mut object = self.despawn_immediate(id)?;
+        object.set_parent_id(None);
+        object.clear_children();
+        Some(object)
     }
 
     pub fn find_first_with<T: 'static>(&self) -> Option<ObjectId> {
@@ -470,11 +613,32 @@ impl World {
     }
 
     fn despawn_immediate(&mut self, id: ObjectId) -> Option<Object> {
+        let descendants = self.descendant_ids(id);
+        for descendant in descendants.into_iter().rev() {
+            self.despawn_immediate_single(descendant);
+        }
+        self.despawn_immediate_single(id)
+    }
+
+    fn despawn_immediate_single(&mut self, id: ObjectId) -> Option<Object> {
         let index = self
             .objects
             .iter()
             .position(|object| object.id() == Some(id))?;
-        Some(self.objects.remove(index))
+        let mut object = self.objects.remove(index);
+        if let Some(parent_id) = object.parent() {
+            if let Some(parent) = self.get_mut(parent_id) {
+                parent.remove_child_id(id);
+            }
+        }
+        for child_id in object.children().to_vec() {
+            if let Some(child) = self.get_mut(child_id) {
+                child.set_parent_id(None);
+            }
+        }
+        object.set_parent_id(None);
+        object.clear_children();
+        Some(object)
     }
 
     fn start_object_lifecycle(object: &mut Object) {
@@ -486,11 +650,75 @@ impl World {
             }
         }
     }
+
+    fn world_transform_matrix_for_object(
+        &self,
+        object: &Object,
+        interpolation_factor: f32,
+    ) -> Option<Mat4> {
+        let transform = object.get_component::<Transform>()?;
+        let local = local_transform_matrix(transform, interpolation_factor);
+        let Some(parent_id) = object.parent() else {
+            return Some(local);
+        };
+        Some(self.world_transform_matrix(parent_id, interpolation_factor)? * local)
+    }
+
+    fn descendant_ids(&self, object_id: ObjectId) -> Vec<ObjectId> {
+        let mut result = Vec::new();
+        let Some(object) = self.get(object_id) else {
+            return result;
+        };
+
+        for child_id in object.children() {
+            result.push(*child_id);
+            result.extend(self.descendant_ids(*child_id));
+        }
+
+        result
+    }
+}
+
+fn local_transform_matrix(transform: &Transform, interpolation_factor: f32) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        transform.scale,
+        transform.interpolated_rotation(interpolation_factor),
+        transform.interpolated_position(interpolation_factor),
+    )
 }
 
 impl Default for World {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn to_render_atmosphere(atmosphere: WorldAtmosphere) -> runa_render_api::command::AtmosphereData {
+    let background = match atmosphere.background {
+        BackgroundMode::SolidColor { color } => {
+            runa_render_api::command::BackgroundModeData::SolidColor { color }
+        }
+        BackgroundMode::VerticalGradient {
+            zenith_color,
+            horizon_color,
+            ground_color,
+            horizon_height,
+            smoothness,
+        } => runa_render_api::command::BackgroundModeData::VerticalGradient {
+            zenith_color,
+            horizon_color,
+            ground_color,
+            horizon_height,
+            smoothness,
+        },
+        BackgroundMode::Sky => runa_render_api::command::BackgroundModeData::Sky,
+    };
+
+    runa_render_api::command::AtmosphereData {
+        ambient_color: atmosphere.ambient_color,
+        ambient_intensity: atmosphere.ambient_intensity,
+        background_intensity: atmosphere.background_intensity,
+        background,
     }
 }
 

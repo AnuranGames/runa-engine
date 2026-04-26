@@ -28,4 +28,5 @@ runa_engine = { path = "../runa_engine" }
 
 [build-dependencies]
 image = { version = "0.25", features = ["png", "ico"] }
+ico = "0.4"
 winres = "0.1"

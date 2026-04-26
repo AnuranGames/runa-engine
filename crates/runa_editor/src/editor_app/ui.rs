@@ -14,115 +14,165 @@ impl<'window> EditorApp<'window> {
     fn build_ui(&mut self, ctx: &egui::Context) {
         let ui_scale = ctx.zoom_factor().max(0.75);
         egui::Panel::top("editor_top_bar").show(ctx, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Project...").clicked() {
-                        self.project_dialog.open = true;
-                        ui.close();
-                    }
-                    if ui.button("Open Project...").clicked() {
-                        self.open_project_dialog();
-                        ui.close();
-                    }
-                    ui.separator();
-                    let project_open = self.project_session.is_some();
-                    if ui
-                        .add_enabled(project_open, egui::Button::new("New World"))
-                        .clicked()
-                    {
-                        self.new_world();
-                        ui.close();
-                    }
-                    if ui
-                        .add_enabled(project_open, egui::Button::new("Open World..."))
-                        .clicked()
-                    {
-                        self.open_world_dialog();
-                        ui.close();
-                    }
-                    if ui
-                        .add_enabled(project_open, egui::Button::new("Save World"))
-                        .clicked()
-                    {
-                        self.save_current_world();
-                        ui.close();
-                    }
-                    if ui
-                        .add_enabled(project_open, egui::Button::new("Save World As..."))
-                        .clicked()
-                    {
-                        self.save_world_as_dialog();
-                        ui.close();
-                    }
-                });
-                ui.menu_button("Edit", |ui| {
-                    if ui.button("Editor Settings").clicked() {
-                        self.editor_settings_open = true;
-                        ui.close();
-                    }
-                    if ui.button("Project Settings").clicked() {
-                        self.project_settings_open = true;
-                        ui.close();
-                    }
-                });
-                ui.menu_button("Build", |ui| {
-                    if ui.button("Build Settings").clicked() {
-                        self.build_settings_open = true;
-                        ui.close();
-                    }
-                    let build_enabled =
-                        self.project_session.is_some() && self.build_process.is_none();
-                    let build_label = if self.build_process.is_some() {
-                        "Building..."
-                    } else {
-                        "Build Game"
-                    };
-                    if ui
-                        .add_enabled(build_enabled, egui::Button::new(build_label))
-                        .clicked()
-                    {
-                        self.build_project();
-                        ui.close();
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    ui.checkbox(&mut self.panels.hierarchy, "Hierarchy");
-                    ui.checkbox(&mut self.panels.inspector, "Inspector");
-                    ui.checkbox(&mut self.panels.bottom_bar, "Bottom Bar");
-                });
-                ui.separator();
+            ui.set_min_height(38.0 * ui_scale);
+            ui.spacing_mut().button_padding = egui::vec2(9.0 * ui_scale, 5.0 * ui_scale);
+            ui.spacing_mut().interact_size.y = 28.0 * ui_scale;
+            ui.columns(3, |columns| {
+                columns[0].with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
+                    egui::MenuBar::new().ui(ui, |ui| {
+                        ui.menu_button("File", |ui| {
+                            if ui.button("New Project...").clicked() {
+                                self.project_dialog.open = true;
+                                ui.close();
+                            }
+                            if ui.button("Open Project...").clicked() {
+                                self.open_project_dialog();
+                                ui.close();
+                            }
+                            ui.separator();
+                            let project_open = self.project_session.is_some();
+                            if ui
+                                .add_enabled(project_open, egui::Button::new("New World"))
+                                .clicked()
+                            {
+                                self.new_world();
+                                ui.close();
+                            }
+                            if ui
+                                .add_enabled(project_open, egui::Button::new("Open World..."))
+                                .clicked()
+                            {
+                                self.open_world_dialog();
+                                ui.close();
+                            }
+                            if ui
+                                .add_enabled(project_open, egui::Button::new("Save World"))
+                                .clicked()
+                            {
+                                self.save_current_world();
+                                ui.close();
+                            }
+                            if ui
+                                .add_enabled(project_open, egui::Button::new("Save World As..."))
+                                .clicked()
+                            {
+                                self.save_world_as_dialog();
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .add_enabled(project_open, egui::Button::new("Return to Welcome"))
+                                .clicked()
+                            {
+                                self.return_to_welcome();
+                                ui.close();
+                            }
+                        });
+                        ui.menu_button("Edit", |ui| {
+                            if ui.button("Editor Settings").clicked() {
+                                self.editor_settings_open = true;
+                                ui.close();
+                            }
+                            if ui.button("Project Settings").clicked() {
+                                self.project_settings_open = true;
+                                ui.close();
+                            }
+                        });
+                        ui.menu_button("Build", |ui| {
+                            if ui.button("Build Settings").clicked() {
+                                self.build_settings_open = true;
+                                ui.close();
+                            }
+                            let build_enabled =
+                                self.project_session.is_some() && self.build_process.is_none();
+                            let build_label = if self.build_process.is_some() {
+                                "Building..."
+                            } else {
+                                "Build Game"
+                            };
+                            if ui
+                                .add_enabled(build_enabled, egui::Button::new(build_label))
+                                .clicked()
+                            {
+                                self.build_project();
+                                ui.close();
+                            }
+                        });
+                        ui.menu_button("View", |ui| {
+                            ui.checkbox(&mut self.panels.hierarchy, "Hierarchy");
+                            ui.checkbox(&mut self.panels.inspector, "Inspector");
+                            ui.checkbox(&mut self.panels.bottom_bar, "Bottom Bar");
+                        });
+                        ui.separator();
 
-                let play_label = if self.runtime_process.is_some() {
-                    "Stop"
-                } else {
-                    "Play In Window"
-                };
-                let play_response = ui.add_enabled(
-                    self.project_session.is_some(),
-                    egui::Button::new(play_label),
-                );
-                if play_response.clicked() {
-                    if self.runtime_process.is_some() {
+                        let refresh_label = if self.place_object.refresh_in_progress {
+                            "Refreshing..."
+                        } else {
+                            "Refresh Project Metadata"
+                        };
+                        let refresh_response = ui.add_enabled(
+                            self.project_session.is_some()
+                                && !self.place_object.refresh_in_progress,
+                            egui::Button::new(refresh_label),
+                        );
+                        if refresh_response.clicked() {
+                            self.refresh_project_metadata(true);
+                        }
+                    });
+                });
+
+                let column_rect = columns[1].max_rect();
+                let button_size = egui::vec2(28.0 * ui_scale, 28.0 * ui_scale);
+                let button_rect = egui::Rect::from_center_size(column_rect.center(), button_size);
+                if self.runtime_process.is_some() {
+                    let stop_icon = crate::editor_textures::load_editor_icon(
+                        columns[1].ctx(),
+                        "top_bar_stop_icon",
+                        "Stop",
+                    );
+                    let response =
+                        columns[1].add_enabled_ui(self.project_session.is_some(), |ui| {
+                            ui.put(
+                                button_rect,
+                                egui::Button::image(
+                                    egui::Image::new(&stop_icon).fit_to_exact_size(egui::vec2(
+                                        14.0 * ui_scale,
+                                        14.0 * ui_scale,
+                                    )),
+                                )
+                                .min_size(button_size),
+                            )
+                        });
+                    if response.inner.clicked() {
                         self.stop_project();
-                    } else {
+                    }
+                    response.response.on_hover_text("Stop");
+                } else {
+                    let play_icon = crate::editor_textures::load_editor_icon(
+                        columns[1].ctx(),
+                        "top_bar_play_icon",
+                        "Play",
+                    );
+                    let response =
+                        columns[1].add_enabled_ui(self.project_session.is_some(), |ui| {
+                            ui.put(
+                                button_rect,
+                                egui::Button::image(
+                                    egui::Image::new(&play_icon).fit_to_exact_size(egui::vec2(
+                                        14.0 * ui_scale,
+                                        14.0 * ui_scale,
+                                    )),
+                                )
+                                .min_size(button_size),
+                            )
+                        });
+                    if response.inner.clicked() {
                         self.play_project();
                     }
+                    response.response.on_hover_text("Play In Window");
                 }
 
-                let refresh_label = if self.place_object.refresh_in_progress {
-                    "Refreshing..."
-                } else {
-                    "Refresh Project Metadata"
-                };
-                let refresh_response = ui.add_enabled(
-                    self.project_session.is_some() && !self.place_object.refresh_in_progress,
-                    egui::Button::new(refresh_label),
-                );
-                if refresh_response.clicked() {
-                    self.refresh_project_metadata(true);
-                }
-
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                columns[2].with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(self.window_title()).strong());
                 });
             });
@@ -132,6 +182,7 @@ impl<'window> EditorApp<'window> {
             self.welcome_screen(ctx);
             self.project_dialog_window(ctx);
             self.project_loading_overlay(ctx);
+            self.project_version_prompt_window(ctx);
             return;
         }
 
@@ -149,7 +200,13 @@ impl<'window> EditorApp<'window> {
             let content_rect = ctx.content_rect();
             let side_margin = 12.0;
             let bottom_gap = 32.0 * ui_scale;
-            let overlay_width = (content_rect.width() - side_margin * 2.0).max(240.0);
+            let right_reserved = if self.panels.inspector {
+                self.inspector_panel_width + side_margin
+            } else {
+                0.0
+            };
+            let overlay_width =
+                (content_rect.width() - side_margin * 2.0 - right_reserved).max(240.0);
             let overlay_pos = egui::pos2(
                 content_rect.left() + side_margin,
                 content_rect.bottom() - bottom_gap - self.bottom_bar_height,
@@ -238,6 +295,11 @@ impl<'window> EditorApp<'window> {
                                 |ui| match self.bottom_tab {
                                     BottomTab::ContentBrowser => {
                                         self.content_browser.ui(ui, &self.settings);
+                                        if let Some(path) =
+                                            self.content_browser.take_pending_world_open()
+                                        {
+                                            self.open_world_from_path(path);
+                                        }
                                         if let Some(message) = self.content_browser.take_message() {
                                             self.status_line = message;
                                         }
@@ -266,35 +328,38 @@ impl<'window> EditorApp<'window> {
                 .default_size(240.0)
                 .min_size(180.0)
                 .show(ctx, |ui| {
-                    ui.heading("Hierarchy");
+                    ui.heading(self.current_world_title());
                     ui.separator();
-                    let hierarchy_items: Vec<(ObjectId, String)> = self
-                        .world_object_ids()
-                        .into_iter()
-                        .filter_map(|object_id| {
-                            self.world
-                                .get(object_id)
-                                .map(|object| (object_id, helpers::object_title(object)))
-                        })
-                        .collect();
                     egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
                         .id_salt("hierarchy_scroll")
                         .show(ui, |ui| {
-                            for (object_id, title) in &hierarchy_items {
-                                let selected = self.selection == Some(*object_id);
-                                let response = ui.selectable_label(selected, title);
-                                if response.clicked() {
-                                    self.selection = Some(*object_id);
-                                }
-                                response.context_menu(|ui| {
-                                    self.selection = Some(*object_id);
-                                    self.hierarchy_context_menu_ui(ui, Some(*object_id));
-                                });
+                            let scroll_start = ui.cursor().min;
+                            let mut root_ids = self.world.root_object_ids();
+                            root_ids.sort_unstable();
+                            for object_id in root_ids {
+                                self.hierarchy_object_row(ui, object_id, 0);
                             }
+                            let blank_height = (ui.clip_rect().bottom() - ui.cursor().min.y)
+                                .max(24.0)
+                                .max(ui.available_height());
                             let blank_response = ui.allocate_response(
-                                egui::vec2(ui.available_width(), ui.available_height().max(24.0)),
+                                egui::vec2(ui.available_width(), blank_height),
                                 egui::Sense::click(),
                             );
+                            if blank_response.clicked() && ui.cursor().min.y > scroll_start.y {
+                                self.selection = None;
+                            }
+                            if blank_response.hovered()
+                                && ui.input(|input| input.pointer.any_released())
+                            {
+                                if let Some(dragged_id) = self.hierarchy_dragging_object.take() {
+                                    if self.world.set_parent(dragged_id, None) {
+                                        self.status_line =
+                                            "Moved object to hierarchy root.".to_string();
+                                    }
+                                }
+                            }
                             blank_response.context_menu(|ui| {
                                 self.hierarchy_context_menu_ui(ui, None);
                             });
@@ -308,75 +373,90 @@ impl<'window> EditorApp<'window> {
                 .default_size(320.0)
                 .min_size(320.0)
                 .show(ctx, |ui| {
+                    self.inspector_panel_width = ui.max_rect().width();
                     ui.heading("Inspector");
                     ui.separator();
-                    if let Some(object_id) = self.selection {
-                        if let Some(object) = self.world.get_mut(object_id) {
-                            let project_root = self
-                                .project_session
-                                .as_ref()
-                                .map(|session| session.project.root_dir.as_path());
-                            let scripts_dir = self
-                                .project_session
-                                .as_ref()
-                                .map(|session| session.project.scripts_dir())
-                                .map(|path| path.into_boxed_path());
-                            let scripts_dir = scripts_dir.as_deref();
-                            let inspector_actions = inspector_ui(
-                                ui,
-                                object,
-                                project_root,
-                                scripts_dir,
-                                &self.settings,
-                                &mut self.tile_paint,
-                            );
-                            for removal in inspector_actions.removals {
-                                match removal.target {
-                                    crate::inspector::InspectorRemovalTarget::RuntimeType {
-                                        type_id,
-                                        type_name,
-                                    } => {
-                                        if object.remove_component_type_id(type_id) {
-                                            self.status_line = format!("Removed {}.", type_name);
-                                        }
-                                    }
-                                    crate::inspector::InspectorRemovalTarget::SerializedType {
-                                        kind,
-                                        type_name,
-                                    } => {
-                                        if let Some(storage) =
-                                            object.get_component_mut::<SerializedTypeStorage>()
-                                        {
-                                            if storage.remove(kind, &type_name) {
-                                                self.status_line =
-                                                    format!("Removed {}.", type_name);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .id_salt("inspector_scroll")
+                        .show(ui, |ui| {
+                            if let Some(object_id) = self.selection {
+                                if let Some(object) = self.world.get_mut(object_id) {
+                                    let project_root = self
+                                        .project_session
+                                        .as_ref()
+                                        .map(|session| session.project.root_dir.as_path());
+                                    let scripts_dir = self
+                                        .project_session
+                                        .as_ref()
+                                        .map(|session| session.project.scripts_dir())
+                                        .map(|path| path.into_boxed_path());
+                                    let scripts_dir = scripts_dir.as_deref();
+                                    let inspector_actions = inspector_ui(
+                                        ui,
+                                        object,
+                                        project_root,
+                                        scripts_dir,
+                                        &self.settings,
+                                        &mut self.tile_paint,
+                                    );
+                                    for removal in inspector_actions.removals {
+                                        match removal.target {
+                                            crate::inspector::InspectorRemovalTarget::RuntimeType {
+                                                type_id,
+                                                type_name,
+                                            } => {
+                                                if object.remove_component_type_id(type_id) {
+                                                    self.status_line =
+                                                        format!("Removed {}.", type_name);
+                                                }
+                                            }
+                                            crate::inspector::InspectorRemovalTarget::SerializedType {
+                                                kind,
+                                                type_name,
+                                            } => {
+                                                if let Some(storage) = object
+                                                    .get_component_mut::<SerializedTypeStorage>()
+                                                {
+                                                    if storage.remove(kind, &type_name) {
+                                                        self.status_line =
+                                                            format!("Removed {}.", type_name);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
+                                    ui.separator();
+                                    self.inspector_actions_ui(ui, object_id);
+                                } else {
+                                    ui.label("Selection is out of bounds.");
                                 }
+                            } else {
+                                ui.label("Select an object in the hierarchy.");
                             }
-                            ui.separator();
-                            self.inspector_actions_ui(ui, object_id);
-                        } else {
-                            ui.label("Selection is out of bounds.");
-                        }
-                    } else {
-                        ui.label("Select an object in the hierarchy.");
-                    }
+                            ui.allocate_space(egui::vec2(ui.available_width(), 8.0));
+                        });
                 });
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("World");
-                if let Some(path) = self.current_world_path() {
-                    ui.label(path.display().to_string());
-                } else {
-                    ui.label("Unsaved world");
-                }
+                self.viewport_edit_mode_button(
+                    ui,
+                    ViewportEditMode::Position,
+                    "position-icon",
+                    "Position",
+                );
+                self.viewport_edit_mode_button(
+                    ui,
+                    ViewportEditMode::Rotation,
+                    "rotation-icon",
+                    "Rotation",
+                );
+                self.viewport_edit_mode_button(ui, ViewportEditMode::Scale, "scale-icon", "Scale");
 
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Gizmo").clicked() {
+                    if ui.button("Gizmo").on_hover_text("Gizmo Settings").clicked() {
                         self.gizmo_settings_open = !self.gizmo_settings_open;
                     }
 
@@ -447,15 +527,18 @@ impl<'window> EditorApp<'window> {
         self.build_settings_window(ctx);
         self.project_dialog_window(ctx);
         self.project_loading_overlay(ctx);
+        self.project_version_prompt_window(ctx);
     }
 
     fn welcome_screen(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(style::VIEWPORT_BACKGROUND))
             .show(ctx, |ui| {
-                ui.with_layout(
-                    egui::Layout::centered_and_justified(egui::Direction::TopDown),
-                    |ui| {
+                let version = env!("CARGO_PKG_VERSION");
+                let recent_projects = self.settings.recent_projects.clone();
+                egui::Area::new("welcome_center_panel".into())
+                    .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ui.ctx(), |ui| {
                         egui::Frame::new()
                             .fill(ui.visuals().panel_fill)
                             .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
@@ -464,42 +547,258 @@ impl<'window> EditorApp<'window> {
                             ))
                             .inner_margin(egui::Margin::same(28))
                             .show(ui, |ui| {
-                                ui.set_width(420.0);
-                                ui.vertical_centered(|ui| {
-                                    ui.heading("Welcome to Runa Editor");
-                                    ui.add_space(8.0);
-                                    ui.label("Open an existing project or create a new one to start editing.");
-                                    ui.add_space(22.0);
+                                ui.set_width(940.0);
+                                ui.set_height(640.0);
+                                ui.horizontal_top(|ui| {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(220.0, ui.available_height()),
+                                        egui::Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.heading("Welcome");
+                                            ui.add_space(6.0);
+                                            ui.label(
+                                                "Open an existing project or create a new one.",
+                                            );
+                                            ui.add_space(14.0);
+                                            if ui
+                                                .add_sized(
+                                                    [ui.available_width(), 34.0],
+                                                    egui::Button::new("Open Project..."),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.open_project_dialog();
+                                            }
+                                            ui.add_space(8.0);
+                                            if ui
+                                                .add_sized(
+                                                    [ui.available_width(), 34.0],
+                                                    egui::Button::new("Create New Project..."),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.project_dialog.open = true;
+                                            }
+                                            ui.add_space(16.0);
+                                            ui.separator();
+                                            ui.add_space(10.0);
+                                            ui.small(format!("Engine version: {version}"));
+                                            if self.project_load.is_some() {
+                                                ui.add_space(12.0);
+                                                ui.horizontal(|ui| {
+                                                    ui.spinner();
+                                                    ui.label("Loading project...");
+                                                });
+                                            }
+                                        },
+                                    );
 
-                                    if ui
-                                        .add_sized(
-                                            [260.0, 34.0],
-                                            egui::Button::new("Open Project..."),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.open_project_dialog();
-                                    }
-                                    ui.add_space(8.0);
-                                    if ui
-                                        .add_sized(
-                                            [260.0, 34.0],
-                                            egui::Button::new("Create New Project..."),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.project_dialog.open = true;
-                                    }
+                                    ui.add_space(16.0);
+                                    ui.separator();
+                                    ui.add_space(16.0);
 
-                                    if self.project_load.is_some() {
-                                        ui.add_space(16.0);
-                                        ui.spinner();
-                                        ui.label("Loading project...");
-                                    }
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(ui.available_width(), ui.available_height()),
+                                        egui::Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            ui.horizontal(|ui| {
+                                                ui.heading("Recent Projects");
+                                                ui.label(
+                                                    RichText::new(format!("{}", recent_projects.len()))
+                                                        .weak(),
+                                                );
+                                            });
+                                            ui.small("Project previews are updated on world save.");
+                                            ui.add_space(8.0);
+
+                                            if recent_projects.is_empty() {
+                                                ui.label("No recent projects yet.");
+                                            } else {
+                                                egui::ScrollArea::vertical()
+                                                    .auto_shrink([false, false])
+                                                    .max_height(ui.available_height())
+                                                    .id_salt("welcome_recent_projects")
+                                                    .show(ui, |ui| {
+                                                        for (index, entry) in recent_projects
+                                                            .iter()
+                                                            .enumerate()
+                                                        {
+                                                            let frame = egui::Frame::new()
+                                                                .fill(ui.visuals().faint_bg_color)
+                                                                .stroke(
+                                                                    ui.visuals()
+                                                                        .widgets
+                                                                        .noninteractive
+                                                                        .bg_stroke,
+                                                                )
+                                                                .corner_radius(
+                                                                    egui::CornerRadius::same(10),
+                                                                )
+                                                                .inner_margin(
+                                                                    egui::Margin::same(12),
+                                                                );
+                                                            frame.show(ui, |ui| {
+                                                                ui.set_width(ui.available_width());
+                                                                ui.horizontal(|ui| {
+                                                                    let preview_path =
+                                                                        super::project::project_preview_path(
+                                                                            entry
+                                                                                .manifest_path
+                                                                                .parent()
+                                                                                .unwrap_or(
+                                                                                    entry
+                                                                                        .manifest_path
+                                                                                        .as_path(),
+                                                                                ),
+                                                                        );
+                                                                    if let Ok(texture) =
+                                                                        crate::editor_textures::load_texture_from_path(
+                                                                            ui.ctx(),
+                                                                            &format!(
+                                                                                "welcome_recent_preview_{}_{}",
+                                                                                index,
+                                                                                entry.manifest_path.display()
+                                                                            ),
+                                                                            &preview_path,
+                                                                            Some(64),
+                                                                        )
+                                                                    {
+                                                                        ui.add(
+                                                                            egui::Image::new(
+                                                                                &texture,
+                                                                            )
+                                                                            .fit_to_exact_size(
+                                                                                egui::vec2(
+                                                                                    64.0, 64.0,
+                                                                                ),
+                                                                            ),
+                                                                        );
+                                                                    } else {
+                                                                        let icon = crate::editor_textures::load_editor_icon(
+                                                                            ui.ctx(),
+                                                                            &format!(
+                                                                                "welcome_recent_world_icon_{}",
+                                                                                index
+                                                                            ),
+                                                                            "world",
+                                                                        );
+                                                                        ui.add(
+                                                                            egui::Image::new(&icon)
+                                                                                .fit_to_exact_size(
+                                                                                    egui::vec2(
+                                                                                        48.0,
+                                                                                        48.0,
+                                                                                    ),
+                                                                                ),
+                                                                        );
+                                                                    }
+
+                                                                    ui.vertical(|ui| {
+                                                                        let display_name = if entry
+                                                                            .project_name
+                                                                            .trim()
+                                                                            .is_empty()
+                                                                        {
+                                                                            entry
+                                                                                .manifest_path
+                                                                                .file_stem()
+                                                                                .map(|stem| stem
+                                                                                    .to_string_lossy()
+                                                                                    .to_string())
+                                                                                .unwrap_or_else(|| {
+                                                                                    "Unknown Project"
+                                                                                        .to_string()
+                                                                                })
+                                                                        } else {
+                                                                            entry.project_name.clone()
+                                                                        };
+                                                                        ui.label(
+                                                                            RichText::new(display_name)
+                                                                                .strong(),
+                                                                        );
+                                                                        ui.small(
+                                                                            entry.manifest_path.display().to_string(),
+                                                                        );
+                                                                        ui.horizontal(|ui| {
+                                                                            if let Ok(project) =
+                                                                                runa_project::load_project(
+                                                                                    &entry.manifest_path,
+                                                                                )
+                                                                            {
+                                                                                let project_version =
+                                                                                    project
+                                                                                        .manifest
+                                                                                        .engine_version;
+                                                                                if project_version
+                                                                                    != version
+                                                                                {
+                                                                                    version_warning_badge(ui);
+                                                                                }
+                                                                                ui.small(format!(
+                                                                                    "Version: {}",
+                                                                                    project_version
+                                                                                ));
+                                                                            } else {
+                                                                                ui.small(
+                                                                                    "Version: unavailable",
+                                                                                );
+                                                                            }
+                                                                        });
+                                                                    });
+
+                                                                    ui.with_layout(
+                                                                        Layout::right_to_left(
+                                                                            egui::Align::Center,
+                                                                        ),
+                                                                        |ui| {
+                                                                            let project_root = entry
+                                                                                .manifest_path
+                                                                                .parent()
+                                                                                .map(PathBuf::from);
+                                                                            if ui.button("Open").clicked()
+                                                                            {
+                                                                                if entry
+                                                                                    .manifest_path
+                                                                                    .is_file()
+                                                                                {
+                                                                                    self.begin_load_project(
+                                                                                        entry.manifest_path.clone(),
+                                                                                    );
+                                                                                } else {
+                                                                                    self.settings.remove_recent_project(
+                                                                                        &entry.manifest_path,
+                                                                                    );
+                                                                                    let _ = self
+                                                                                        .settings
+                                                                                        .save();
+                                                                                    self.status_line = format!(
+                                                                                        "Recent project is missing: {}",
+                                                                                        entry.manifest_path.display()
+                                                                                    );
+                                                                                }
+                                                                            }
+                                                                            if ui.button("Explorer").clicked() {
+                                                                                if let Some(project_root) =
+                                                                                    project_root.as_deref()
+                                                                                {
+                                                                                    self.open_project_in_explorer(
+                                                                                        project_root,
+                                                                                    );
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                    );
+                                                                });
+                                                            });
+                                                            ui.add_space(8.0);
+                                                        }
+                                                    });
+                                            }
+                                        },
+                                    );
                                 });
                             });
-                    },
-                );
+                    });
             });
     }
 
@@ -605,6 +904,112 @@ impl<'window> EditorApp<'window> {
             });
     }
 
+    fn project_version_prompt_window(&mut self, ctx: &egui::Context) {
+        let Some(prompt) = self.project_version_prompt.as_ref() else {
+            return;
+        };
+
+        let project_name = prompt.project_name.clone();
+        let project_root = prompt.project_root.clone();
+        let project_version = prompt.project_version.clone();
+        let editor_version = prompt.editor_version.clone();
+        let mut open = true;
+        let mut cancel_open = false;
+        let mut create_backup = false;
+        let mut open_project = false;
+
+        egui::Window::new("Project Version Mismatch")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .default_width(500.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    version_warning_badge(ui);
+                    ui.label(RichText::new("Project version differs from editor version").strong());
+                });
+                ui.add_space(8.0);
+                ui.label(format!("Project: {project_name}"));
+                ui.label(format!("Project version: {project_version}"));
+                ui.label(format!("Editor version: {editor_version}"));
+                ui.small(project_root.display().to_string());
+                ui.add_space(12.0);
+                ui.label(
+                    "This project was created or last saved with a different engine/editor version. Create a backup before opening if you want a safe rollback point.",
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Create Backup").clicked() {
+                        create_backup = true;
+                    }
+                    if ui.button("Open Project").clicked() {
+                        open_project = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel_open = true;
+                    }
+                });
+            });
+
+        if create_backup {
+            match self.create_project_backup(&project_root) {
+                Ok(path) => {
+                    self.status_line = format!("Created backup at {}.", path.display());
+                }
+                Err(error) => {
+                    self.status_line = format!("Failed to create backup: {error}");
+                }
+            }
+        }
+
+        if open_project {
+            if let Some(prompt) = self.project_version_prompt.take() {
+                self.apply_loaded_project(prompt.pending_result);
+            }
+            return;
+        }
+
+        if cancel_open || !open {
+            self.project_version_prompt = None;
+            self.status_line = "Project opening cancelled.".to_string();
+        }
+    }
+
+    fn current_world_title(&self) -> String {
+        self.current_world_path()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+            })
+            .unwrap_or_else(|| "Unsaved world".to_string())
+    }
+
+    fn viewport_edit_mode_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        mode: ViewportEditMode,
+        icon_name: &str,
+        tooltip: &str,
+    ) {
+        let icon = crate::editor_textures::load_editor_icon(
+            ui.ctx(),
+            &format!("viewport_{icon_name}"),
+            icon_name,
+        );
+        let mut button =
+            egui::Button::image(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(18.0, 18.0)))
+                .frame(true)
+                .min_size(egui::vec2(28.0, 28.0));
+        if self.viewport_edit_mode == mode {
+            button = button.fill(ui.visuals().selection.bg_fill);
+        }
+        if ui.add(button).on_hover_text(tooltip).clicked() {
+            self.viewport_edit_mode = mode;
+            self.gizmo_drag = None;
+        }
+    }
+
     fn hierarchy_context_menu_ui(&mut self, ui: &mut egui::Ui, target_id: Option<ObjectId>) {
         if ui.button("Create Empty Object").clicked() {
             self.create_empty_object();
@@ -648,6 +1053,51 @@ impl<'window> EditorApp<'window> {
             self.paste_object(None);
             ui.close();
             return;
+        }
+    }
+
+    fn hierarchy_object_row(&mut self, ui: &mut egui::Ui, object_id: ObjectId, depth: usize) {
+        let Some(object) = self.world.get(object_id) else {
+            return;
+        };
+        let title = helpers::object_title(object);
+        let mut children = object.children().to_vec();
+        children.sort_unstable();
+        let has_children = !children.is_empty();
+
+        ui.horizontal(|ui| {
+            ui.add_space(depth as f32 * 16.0);
+            if has_children {
+                ui.label("▾");
+            } else {
+                ui.label(" ");
+            }
+
+            let selected = self.selection == Some(object_id);
+            let response = ui.selectable_label(selected, title);
+            if response.clicked() {
+                self.selection = Some(object_id);
+            }
+            if response.drag_started() {
+                self.hierarchy_dragging_object = Some(object_id);
+            }
+            if response.hovered() && ui.input(|input| input.pointer.any_released()) {
+                if let Some(dragged_id) = self.hierarchy_dragging_object.take() {
+                    if dragged_id != object_id && self.world.set_parent(dragged_id, Some(object_id))
+                    {
+                        self.selection = Some(dragged_id);
+                        self.status_line = "Reparented object.".to_string();
+                    }
+                }
+            }
+            response.context_menu(|ui| {
+                self.selection = Some(object_id);
+                self.hierarchy_context_menu_ui(ui, Some(object_id));
+            });
+        });
+
+        for child_id in children {
+            self.hierarchy_object_row(ui, child_id, depth + 1);
         }
     }
 
@@ -837,10 +1287,18 @@ impl<'window> EditorApp<'window> {
                 property_row_like(ui, "Executable", |ui| {
                     ui.text_edit_singleline(&mut self.settings.external_editor_executable);
                 });
-                ui.label("Arguments");
+                ui.label("File Arguments");
                 ui.small("Use one argument per line. Use {file} as placeholder.");
                 ui.add(
                     egui::TextEdit::multiline(&mut self.settings.external_editor_args)
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(8.0);
+                ui.label("Project Arguments");
+                ui.small("Use one argument per line. Use {project} as placeholder.");
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.settings.external_editor_project_args)
                         .desired_rows(3)
                         .desired_width(f32::INFINITY),
                 );
@@ -848,10 +1306,12 @@ impl<'window> EditorApp<'window> {
                     if ui.button("Zed").clicked() {
                         self.settings.external_editor_executable = "zed".to_string();
                         self.settings.external_editor_args = "{file}".to_string();
+                        self.settings.external_editor_project_args = "{project}".to_string();
                     }
                     if ui.button("VS Code").clicked() {
                         self.settings.external_editor_executable = "code".to_string();
                         self.settings.external_editor_args = "--goto\n{file}".to_string();
+                        self.settings.external_editor_project_args = "{project}".to_string();
                     }
                 });
 
@@ -937,12 +1397,14 @@ impl<'window> EditorApp<'window> {
         };
 
         let mut open = self.project_settings_open;
+        let mut open_in_code_editor = false;
         egui::Window::new("Project Settings")
             .open(&mut open)
             .resizable(true)
             .anchor(Align2::CENTER_CENTER, [0., 0.])
             .default_width(540.0)
             .show(ctx, |ui| {
+                let project_root = session.project.root_dir.clone();
                 ui.heading("Project");
                 property_row_like(ui, "Name", |ui| {
                     ui.text_edit_singleline(&mut session.project.manifest.name);
@@ -951,20 +1413,58 @@ impl<'window> EditorApp<'window> {
                     ui.text_edit_singleline(&mut session.project.manifest.binary_name);
                 });
                 property_row_like(ui, "Startup World", |ui| {
-                    ui.text_edit_singleline(&mut session.project.manifest.startup_world);
+                    ui.label(session.project.manifest.startup_world.as_str());
+                    if ui.button("Browse...").clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .set_directory(session.project.worlds_dir())
+                            .add_filter("Runa World", &["ron"])
+                            .pick_file()
+                        {
+                            session.project.manifest.startup_world =
+                                super::project::path_relative_to_project(&project_root, &path);
+                        }
+                    }
                 });
                 property_row_like(ui, "Assets Dir", |ui| {
-                    ui.text_edit_singleline(&mut session.project.manifest.assets_dir);
+                    ui.label(session.project.manifest.assets_dir.as_str());
+                    if ui.button("Browse...").clicked() {
+                        if let Some(path) =
+                            FileDialog::new().set_directory(&project_root).pick_folder()
+                        {
+                            session.project.manifest.assets_dir =
+                                super::project::path_relative_to_project(&project_root, &path);
+                        }
+                    }
                 });
                 property_row_like(ui, "Worlds Dir", |ui| {
-                    ui.text_edit_singleline(&mut session.project.manifest.worlds_dir);
+                    ui.label(session.project.manifest.worlds_dir.as_str());
+                    if ui.button("Browse...").clicked() {
+                        if let Some(path) =
+                            FileDialog::new().set_directory(&project_root).pick_folder()
+                        {
+                            session.project.manifest.worlds_dir =
+                                super::project::path_relative_to_project(&project_root, &path);
+                        }
+                    }
                 });
                 property_row_like(ui, "Scripts Dir", |ui| {
-                    ui.text_edit_singleline(&mut session.project.manifest.scripts_dir);
+                    ui.label(session.project.manifest.scripts_dir.as_str());
+                    if ui.button("Browse...").clicked() {
+                        if let Some(path) =
+                            FileDialog::new().set_directory(&project_root).pick_folder()
+                        {
+                            session.project.manifest.scripts_dir =
+                                super::project::path_relative_to_project(&project_root, &path);
+                        }
+                    }
                 });
 
                 ui.separator();
                 ui.heading("RunaAppConfig");
+                if ui.button("Open Project In Code Editor").clicked() {
+                    open_in_code_editor = true;
+                }
+                ui.add_space(8.0);
                 property_row_like(ui, "Window Title", |ui| {
                     ui.text_edit_singleline(&mut session.project.manifest.app.window_title);
                 });
@@ -990,17 +1490,31 @@ impl<'window> EditorApp<'window> {
                     ui.checkbox(&mut session.project.manifest.app.show_fps_in_title, "");
                 });
                 property_row_like(ui, "Window Icon", |ui| {
-                    let mut icon = session
+                    let icon = session
                         .project
                         .manifest
                         .app
                         .window_icon
                         .clone()
                         .unwrap_or_default();
-                    let response = ui.text_edit_singleline(&mut icon);
-                    if response.changed() {
-                        session.project.manifest.app.window_icon =
-                            (!icon.trim().is_empty()).then_some(icon);
+                    if icon.is_empty() {
+                        ui.label("None");
+                    } else {
+                        ui.label(icon);
+                    }
+                    if ui.button("Browse...").clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .set_directory(session.project.assets_dir())
+                            .add_filter("Images", &["png", "jpg", "jpeg", "svg", "ico"])
+                            .pick_file()
+                        {
+                            session.project.manifest.app.window_icon = Some(
+                                super::project::path_relative_to_project(&project_root, &path),
+                            );
+                        }
+                    }
+                    if ui.button("Clear").clicked() {
+                        session.project.manifest.app.window_icon = None;
                     }
                 });
 
@@ -1017,6 +1531,9 @@ impl<'window> EditorApp<'window> {
                 }
             });
         self.project_settings_open = open;
+        if open_in_code_editor {
+            self.open_project_in_code_editor();
+        }
     }
 
     fn build_settings_window(&mut self, ctx: &egui::Context) {
@@ -1260,11 +1777,108 @@ impl<'window> EditorApp<'window> {
         let mut open = self.rendering_settings_open;
         egui::Window::new("Rendering Settings")
             .open(&mut open)
-            .default_width(300.0)
-            .resizable(false)
+            .default_width(360.0)
+            .resizable(true)
             .anchor(Align2::RIGHT_TOP, [-16.0, 64.0])
             .show(ctx, |ui| {
-                ui.label("Renderer-level editor options will live here.");
+                ui.label("World Atmosphere");
+                ui.separator();
+
+                let atmosphere = self.world.atmosphere_mut();
+                color_vec3_row(ui, "Ambient Color", &mut atmosphere.ambient_color);
+                property_row_like(ui, "Ambient Power", |ui| {
+                    ui.add_sized(
+                        [120.0, 22.0],
+                        egui::DragValue::new(&mut atmosphere.ambient_intensity)
+                            .speed(0.01)
+                            .range(0.0..=10.0),
+                    );
+                });
+                property_row_like(ui, "Background Power", |ui| {
+                    ui.add_sized(
+                        [120.0, 22.0],
+                        egui::DragValue::new(&mut atmosphere.background_intensity)
+                            .speed(0.01)
+                            .range(0.0..=10.0),
+                    );
+                });
+
+                ui.separator();
+                let mut mode = match atmosphere.background {
+                    BackgroundMode::SolidColor { .. } => 0,
+                    BackgroundMode::VerticalGradient { .. } => 1,
+                    BackgroundMode::Sky => 2,
+                };
+
+                property_row_like(ui, "Background", |ui| {
+                    egui::ComboBox::from_id_salt("world_atmosphere_background_mode")
+                        .selected_text(match mode {
+                            0 => "Solid Color",
+                            1 => "Vertical Gradient",
+                            _ => "Sky (reserved)",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut mode, 0, "Solid Color");
+                            ui.selectable_value(&mut mode, 1, "Vertical Gradient");
+                            ui.selectable_value(&mut mode, 2, "Sky (reserved)");
+                        });
+                });
+
+                atmosphere.background = match (mode, atmosphere.background) {
+                    (0, BackgroundMode::SolidColor { color }) => {
+                        BackgroundMode::SolidColor { color }
+                    }
+                    (0, _) => BackgroundMode::SolidColor {
+                        color: Vec3::new(0.08, 0.09, 0.11),
+                    },
+                    (
+                        1,
+                        BackgroundMode::VerticalGradient {
+                            zenith_color,
+                            horizon_color,
+                            ground_color,
+                            horizon_height,
+                            smoothness,
+                        },
+                    ) => BackgroundMode::VerticalGradient {
+                        zenith_color,
+                        horizon_color,
+                        ground_color,
+                        horizon_height,
+                        smoothness,
+                    },
+                    (1, _) => BackgroundMode::default(),
+                    _ => BackgroundMode::Sky,
+                };
+
+                match &mut atmosphere.background {
+                    BackgroundMode::SolidColor { color } => {
+                        color_vec3_row(ui, "Color", color);
+                    }
+                    BackgroundMode::VerticalGradient {
+                        zenith_color,
+                        horizon_color,
+                        ground_color,
+                        horizon_height,
+                        smoothness,
+                    } => {
+                        color_vec3_row(ui, "Zenith", zenith_color);
+                        color_vec3_row(ui, "Horizon", horizon_color);
+                        color_vec3_row(ui, "Ground", ground_color);
+                        property_row_like(ui, "Horizon Height", |ui| {
+                            ui.add_sized(
+                                [120.0, 22.0],
+                                egui::Slider::new(horizon_height, 0.0..=1.0),
+                            );
+                        });
+                        property_row_like(ui, "Smoothness", |ui| {
+                            ui.add_sized([120.0, 22.0], egui::Slider::new(smoothness, 0.001..=1.0));
+                        });
+                    }
+                    BackgroundMode::Sky => {
+                        ui.label("Sky rendering is reserved for future skybox/HDRI support.");
+                    }
+                }
             });
         self.rendering_settings_open = open;
     }
@@ -1363,7 +1977,7 @@ impl<'window> EditorApp<'window> {
                 let columns = atlas.columns.max(1);
                 let rows = atlas.rows.max(1);
                 let frame_count = atlas.frame_count();
-                let tile_preview = egui::vec2(16.0, 16.0);
+                let tile_cell_size = egui::vec2(40.0, 40.0);
 
                 egui::ScrollArea::vertical()
                     .id_salt("tile_palette_scroll")
@@ -1376,25 +1990,42 @@ impl<'window> EditorApp<'window> {
                                         continue;
                                     }
                                     let uv = atlas.uv_rect_for_frame(frame);
-                                    let image = egui::Image::new(&texture_handle)
-                                        .uv(egui::Rect::from_min_size(
-                                            egui::pos2(uv.x, uv.y),
-                                            egui::vec2(uv.width, uv.height),
-                                        ))
-                                        .fit_to_exact_size(tile_preview);
                                     let selected = tilemap.selected_tile == frame;
-                                    let mut button = egui::Button::image(image).frame(true);
-                                    if selected {
-                                        button = button.stroke(egui::Stroke::new(
+                                    let (rect, response) = ui
+                                        .allocate_exact_size(tile_cell_size, egui::Sense::click());
+                                    let fill = if selected {
+                                        egui::Color32::from_rgb(35, 77, 116)
+                                    } else if response.hovered() {
+                                        ui.visuals().widgets.hovered.bg_fill
+                                    } else {
+                                        ui.visuals().widgets.inactive.bg_fill
+                                    };
+                                    let stroke = if selected {
+                                        egui::Stroke::new(
                                             2.0,
                                             egui::Color32::from_rgb(96, 180, 255),
-                                        ));
-                                    }
-                                    if ui
-                                        .add(button)
-                                        .on_hover_text(format!("Tile {frame}"))
-                                        .clicked()
-                                    {
+                                        )
+                                    } else {
+                                        ui.visuals().widgets.inactive.bg_stroke
+                                    };
+                                    ui.painter().rect(
+                                        rect,
+                                        4.0,
+                                        fill,
+                                        stroke,
+                                        egui::StrokeKind::Inside,
+                                    );
+                                    let image_rect = rect.shrink(4.0);
+                                    ui.painter().image(
+                                        texture_handle.id(),
+                                        image_rect,
+                                        egui::Rect::from_min_size(
+                                            egui::pos2(uv.x, uv.y),
+                                            egui::vec2(uv.width, uv.height),
+                                        ),
+                                        egui::Color32::WHITE,
+                                    );
+                                    if response.on_hover_text(format!("Tile {frame}")).clicked() {
                                         tilemap.selected_tile = frame;
                                     }
                                 }
@@ -1410,6 +2041,18 @@ fn property_row_like(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui
     ui.horizontal(|ui| {
         ui.add_sized([110.0, 22.0], egui::Label::new(label));
         body(ui);
+    });
+}
+
+fn color_vec3_row(ui: &mut egui::Ui, label: &str, color: &mut Vec3) {
+    property_row_like(ui, label, |ui| {
+        let mut value = [color.x, color.y, color.z];
+        if ui.color_edit_button_rgb(&mut value).changed() {
+            *color = Vec3::from_array(value);
+        }
+        for channel in &mut value {
+            *channel = channel.clamp(0.0, 1.0);
+        }
     });
 }
 
@@ -1435,4 +2078,18 @@ fn help_icon_button(ui: &mut egui::Ui, target: &str, status_line: &mut String) {
             *status_line = error;
         }
     }
+}
+
+fn version_warning_badge(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+    let painter = ui.painter();
+    let fill = egui::Color32::from_rgb(230, 184, 36);
+    painter.circle_filled(rect.center(), 7.0, fill);
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "!",
+        egui::FontId::proportional(12.0),
+        egui::Color32::BLACK,
+    );
 }

@@ -76,6 +76,18 @@ impl<'window> EditorApp<'window> {
         if !self.editor_camera.is_orthographic() {
             let camera = self.editor_camera.camera(self.pending_viewport_size);
             self.viewport_camera = Some(camera);
+            if !ctx.input(|input| input.pointer.primary_down()) {
+                self.gizmo_drag = None;
+            }
+            if self.gizmo_enabled && response.drag_started_by(egui::PointerButton::Primary) {
+                if let Some(pointer_pos) = response.interact_pointer_pos() {
+                    self.try_begin_3d_gizmo_drag(response.rect, camera, pointer_pos);
+                }
+            }
+            if self.gizmo_drag.is_some() && ctx.input(|input| input.pointer.primary_down()) {
+                let delta = ctx.input(|input| input.pointer.delta());
+                self.drag_selected_object_3d(delta);
+            }
             self.draw_viewport_overlay(ui, response.rect, camera);
             return;
         }
@@ -236,6 +248,7 @@ impl<'window> EditorApp<'window> {
         if self.show_component_icons {
             self.draw_component_icons(&painter, rect, camera);
         }
+        self.draw_directional_light_arrows(&painter, rect, camera);
 
         if let Some(object_id) = self.selection {
             self.draw_selected_camera_overlay(&painter, rect, camera, object_id);
@@ -254,6 +267,8 @@ impl<'window> EditorApp<'window> {
 
             if self.gizmo_enabled && self.editor_camera.is_orthographic() {
                 self.draw_transform_gizmo(&painter, rect, camera, object_id);
+            } else if self.gizmo_enabled {
+                self.draw_transform_gizmo_3d(&painter, rect, camera, object_id);
             }
         }
     }
@@ -353,6 +368,47 @@ impl<'window> EditorApp<'window> {
             &[resolved.position, resolved.position + forward * 2.0],
             color,
         );
+    }
+
+    fn draw_directional_light_arrows(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        camera: Camera,
+    ) {
+        for object_id in self.world_object_ids() {
+            let Some(object) = self.world.get(object_id) else {
+                continue;
+            };
+            let Some(light) = object.get_component::<DirectionalLight>() else {
+                continue;
+            };
+            let Some(matrix) = self.world.world_transform_matrix(object_id, 1.0) else {
+                continue;
+            };
+            let origin = matrix.transform_point3(Vec3::ZERO);
+            let direction = light.direction.normalize_or_zero();
+            if direction.length_squared() <= f32::EPSILON {
+                continue;
+            }
+
+            let color = egui::Color32::from_rgb(255, 225, 120);
+            if self.editor_camera.is_orthographic() {
+                let start = helpers::world_to_screen(rect, camera, origin.truncate());
+                let end =
+                    helpers::world_to_screen(rect, camera, (origin + direction * 1.75).truncate());
+                draw_screen_arrow(painter, start, end, color);
+            } else {
+                let Some(start) = helpers::world3_to_screen(rect, camera, origin) else {
+                    continue;
+                };
+                let Some(end) = helpers::world3_to_screen(rect, camera, origin + direction * 2.0)
+                else {
+                    continue;
+                };
+                draw_screen_arrow(painter, start, end, color);
+            }
+        }
     }
 
     fn draw_orthographic_camera_volume(
@@ -586,6 +642,93 @@ impl<'window> EditorApp<'window> {
                 transform.rotation = Quat::from_euler(EulerRot::XYZ, x, y, new_rotation_z);
                 transform.previous_rotation = transform.rotation;
             }
+            GizmoHandleKind::PositionAxis(_)
+            | GizmoHandleKind::RotationAxis(_)
+            | GizmoHandleKind::ScaleAxis(_) => {}
+        }
+    }
+
+    fn try_begin_3d_gizmo_drag(
+        &mut self,
+        rect: egui::Rect,
+        camera: Camera,
+        pointer_pos: egui::Pos2,
+    ) -> bool {
+        let Some(object_id) = self.selection else {
+            return false;
+        };
+        let Some(object) = self.world.get(object_id) else {
+            return false;
+        };
+        let Some(transform) = object.get_component::<Transform>() else {
+            return false;
+        };
+        for (axis, _, handle_pos, _) in self.gizmo_3d_handles(rect, camera, transform.position) {
+            if pointer_pos.distance(handle_pos) <= 12.0 {
+                let (_, _, start_rotation_z) = transform.rotation.to_euler(EulerRot::XYZ);
+                self.gizmo_drag = Some(ViewportDragState {
+                    object_id,
+                    kind: match self.viewport_edit_mode {
+                        ViewportEditMode::Position => GizmoHandleKind::PositionAxis(axis),
+                        ViewportEditMode::Rotation => GizmoHandleKind::RotationAxis(axis),
+                        ViewportEditMode::Scale => GizmoHandleKind::ScaleAxis(axis),
+                    },
+                    offset: Vec2::ZERO,
+                    start_position: transform.position,
+                    start_rotation_z,
+                    start_pointer_angle: 0.0,
+                });
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn drag_selected_object_3d(&mut self, pixel_delta: egui::Vec2) {
+        let Some(drag) = self.gizmo_drag.as_ref() else {
+            return;
+        };
+        let Some(object) = self.world.get_mut(drag.object_id) else {
+            return;
+        };
+        let Some(transform) = object.get_component_mut::<Transform>() else {
+            return;
+        };
+
+        let delta = (pixel_delta.x - pixel_delta.y) * 0.02;
+        match drag.kind {
+            GizmoHandleKind::PositionAxis(axis) => {
+                let mut position = transform.position;
+                position[axis] += delta;
+                if self.snap_enabled {
+                    let step = self.snap_step.max(0.1);
+                    position[axis] = (position[axis] / step).round() * step;
+                }
+                transform.position = position;
+                transform.previous_position = transform.position;
+            }
+            GizmoHandleKind::RotationAxis(axis) => {
+                let (mut x, mut y, mut z) = transform.rotation.to_euler(EulerRot::XYZ);
+                let rotation_delta = delta * 0.75;
+                match axis {
+                    0 => x += rotation_delta,
+                    1 => y += rotation_delta,
+                    _ => z += rotation_delta,
+                }
+                transform.rotation = Quat::from_euler(EulerRot::XYZ, x, y, z);
+                transform.previous_rotation = transform.rotation;
+            }
+            GizmoHandleKind::ScaleAxis(axis) => {
+                let mut scale = transform.scale;
+                scale[axis] = (scale[axis] + delta).max(0.05);
+                if self.snap_enabled {
+                    let step = self.snap_step.max(0.1);
+                    scale[axis] = (scale[axis] / step).round() * step;
+                }
+                transform.scale = scale;
+            }
+            _ => {}
         }
     }
 
@@ -596,7 +739,7 @@ impl<'window> EditorApp<'window> {
             let Some(object) = self.world.get(object_id) else {
                 continue;
             };
-            let Some((min, max)) = helpers::object_world_bounds_2d(object) else {
+            let Some((min, max)) = self.object_bounds_2d(object_id, object) else {
                 continue;
             };
 
@@ -633,16 +776,38 @@ impl<'window> EditorApp<'window> {
         object_id: ObjectId,
     ) -> Option<egui::Rect> {
         let object = self.world.get(object_id)?;
-        let (min, max) = helpers::object_world_bounds_2d(object)?;
+        let (min, max) = self.object_bounds_2d(object_id, object)?;
         let top_left = helpers::world_to_screen(rect, camera, Vec2::new(min.x, max.y));
         let bottom_right = helpers::world_to_screen(rect, camera, Vec2::new(max.x, min.y));
         Some(egui::Rect::from_two_pos(top_left, bottom_right))
     }
 
+    fn object_bounds_2d(&self, object_id: ObjectId, object: &Object) -> Option<(Vec2, Vec2)> {
+        let (min, max) = helpers::object_world_bounds_2d(object)?;
+        let matrix = self.world.world_transform_matrix(object_id, 1.0)?;
+        let local_position = object.get_component::<Transform>()?.position;
+        let local_matrix = Mat4::from_translation(-local_position);
+        let to_world = matrix * local_matrix;
+        let corners = [
+            Vec3::new(min.x, min.y, local_position.z),
+            Vec3::new(min.x, max.y, local_position.z),
+            Vec3::new(max.x, min.y, local_position.z),
+            Vec3::new(max.x, max.y, local_position.z),
+        ];
+        let mut world_min = Vec2::splat(f32::INFINITY);
+        let mut world_max = Vec2::splat(f32::NEG_INFINITY);
+        for corner in corners {
+            let transformed = to_world.transform_point3(corner).truncate();
+            world_min = world_min.min(transformed);
+            world_max = world_max.max(transformed);
+        }
+        Some((world_min, world_max))
+    }
+
     fn object_world_position(&self, object_id: ObjectId) -> Option<Vec3> {
-        let object = self.world.get(object_id)?;
-        let transform = object.get_component::<Transform>()?;
-        Some(transform.position)
+        self.world
+            .world_transform_matrix(object_id, 1.0)
+            .map(|matrix| matrix.transform_point3(Vec3::ZERO))
     }
 
     fn draw_transform_gizmo(
@@ -659,8 +824,19 @@ impl<'window> EditorApp<'window> {
             return;
         };
 
-        let center = transform.position.truncate();
-        let handles = helpers::gizmo_handles(center, transform.scale);
+        let matrix = self
+            .world
+            .world_transform_matrix(object_id, 1.0)
+            .unwrap_or_else(|| {
+                Mat4::from_scale_rotation_translation(
+                    transform.scale,
+                    transform.rotation,
+                    transform.position,
+                )
+            });
+        let (world_scale, _, world_position) = matrix.to_scale_rotation_translation();
+        let center = world_position.truncate();
+        let handles = helpers::gizmo_handles(center, world_scale);
         let center_screen = helpers::world_to_screen(rect, camera, center);
         let x_screen = helpers::world_to_screen(rect, camera, handles[1].1);
         let y_screen = helpers::world_to_screen(rect, camera, handles[2].1);
@@ -703,6 +879,71 @@ impl<'window> EditorApp<'window> {
             egui::Color32::from_rgb(255, 210, 64),
             "R",
         );
+    }
+
+    fn draw_transform_gizmo_3d(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        camera: Camera,
+        object_id: ObjectId,
+    ) {
+        let Some(object) = self.world.get(object_id) else {
+            return;
+        };
+        let Some(transform) = object.get_component::<Transform>() else {
+            return;
+        };
+        let origin = self
+            .world
+            .world_transform_matrix(object_id, 1.0)
+            .map(|matrix| matrix.transform_point3(Vec3::ZERO))
+            .unwrap_or(transform.position);
+        let Some(center_screen) = helpers::world3_to_screen(rect, camera, origin) else {
+            return;
+        };
+
+        for (_, _, handle_pos, color) in self.gizmo_3d_handles(rect, camera, origin) {
+            painter.line_segment([center_screen, handle_pos], egui::Stroke::new(2.0, color));
+        }
+
+        for (axis, _, handle_pos, color) in self.gizmo_3d_handles(rect, camera, origin) {
+            let label = match (self.viewport_edit_mode, axis) {
+                (ViewportEditMode::Position, 0) => "X",
+                (ViewportEditMode::Position, 1) => "Y",
+                (ViewportEditMode::Position, _) => "Z",
+                (ViewportEditMode::Rotation, 0) => "RX",
+                (ViewportEditMode::Rotation, 1) => "RY",
+                (ViewportEditMode::Rotation, _) => "RZ",
+                (ViewportEditMode::Scale, 0) => "SX",
+                (ViewportEditMode::Scale, 1) => "SY",
+                (ViewportEditMode::Scale, _) => "SZ",
+            };
+            helpers::draw_gizmo_handle(painter, handle_pos, color, label);
+        }
+    }
+
+    fn gizmo_3d_handles(
+        &self,
+        rect: egui::Rect,
+        camera: Camera,
+        origin: Vec3,
+    ) -> Vec<(usize, Vec3, egui::Pos2, egui::Color32)> {
+        let distance = (camera.position - origin).length().max(1.0);
+        let length = (distance * 0.18).clamp(0.75, 4.0);
+        let axes = [
+            (0, Vec3::X, egui::Color32::from_rgb(255, 99, 99)),
+            (1, Vec3::Y, egui::Color32::from_rgb(104, 196, 125)),
+            (2, Vec3::Z, egui::Color32::from_rgb(96, 180, 255)),
+        ];
+
+        axes.into_iter()
+            .filter_map(|(axis, direction, color)| {
+                let world_end = origin + direction * length;
+                let screen_end = helpers::world3_to_screen(rect, camera, world_end)?;
+                Some((axis, world_end, screen_end, color))
+            })
+            .collect()
     }
 
     fn draw_perspective_outline(
@@ -816,4 +1057,27 @@ impl<'window> EditorApp<'window> {
             self.editor_camera.frame_3d(transform.position, distance);
         }
     }
+}
+
+fn draw_screen_arrow(
+    painter: &egui::Painter,
+    start: egui::Pos2,
+    end: egui::Pos2,
+    color: egui::Color32,
+) {
+    let direction = end - start;
+    if direction.length_sq() <= 1.0 {
+        return;
+    }
+
+    painter.line_segment([start, end], egui::Stroke::new(2.0, color));
+
+    let dir = direction.normalized();
+    let normal = egui::vec2(-dir.y, dir.x);
+    let head_len = 9.0;
+    let head_width = 5.0;
+    let left = end - dir * head_len + normal * head_width;
+    let right = end - dir * head_len - normal * head_width;
+    painter.line_segment([end, left], egui::Stroke::new(2.0, color));
+    painter.line_segment([end, right], egui::Stroke::new(2.0, color));
 }

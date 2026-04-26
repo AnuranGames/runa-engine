@@ -6,16 +6,17 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
+    @location(1) color: vec4<f32>,
 };
 
 struct InstanceData {
   @location(2) position: vec3<f32>,   // sprite world position
-  @location(3) rotation: f32,         // Z-axis rotation in radians
-  @location(4) scale: vec3<f32>,      // scale along X, Y, Z
-    @location(5) uv_offset: vec2<f32>,
-    @location(6) uv_size: vec2<f32>,
-    @location(7) flip: u32,
-  @location(8) _pad: f32,             // padding up to 32 bytes
+    @location(3) rotation: f32,         // Z-axis rotation in radians
+    @location(4) scale: vec3<f32>,      // scale along X, Y, Z
+    @location(5) color: vec4<f32>,
+    @location(6) uv_offset: vec2<f32>,
+    @location(7) uv_size: vec2<f32>,
+    @location(8) flip: u32,
 };
 
 struct Globals {
@@ -66,6 +67,7 @@ fn vs_main(
     let final_uv = instance.uv_offset + uv * instance.uv_size;
 
     out.tex_coords = final_uv;  // Pass to the fragment shader
+    out.color = instance.color;
 
     // ... remaining position logic ...
     return out;
@@ -73,5 +75,9 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_sampler, in.tex_coords);
+    let color = textureSample(t_diffuse, s_sampler, in.tex_coords) * in.color;
+    if (color.a <= 0.001) {
+        discard;
+    }
+    return color;
 }

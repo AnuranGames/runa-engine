@@ -19,14 +19,13 @@ use egui::{Align2, Layout, RichText};
 use egui_wgpu::{Renderer as EguiRenderer, RendererOptions, ScreenDescriptor};
 use egui_winit::State as EguiWinitState;
 use rfd::FileDialog;
-use runa_asset::load_window_icon;
 use runa_core::components::{
-    ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D, ComponentRuntimeKind,
-    CursorInteractable, Mesh, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision,
-    SerializedTypeEntry, SerializedTypeKind, SerializedTypeStorage, SpriteRenderer, Tilemap,
-    TilemapRenderer, Transform,
+    ActiveCamera, AudioListener, AudioSource, BackgroundMode, Camera, Canvas, Collider2D,
+    ComponentRuntimeKind, CursorInteractable, DirectionalLight, Mesh, MeshRenderer,
+    ObjectDefinitionInstance, PhysicsCollision, SerializedTypeEntry, SerializedTypeKind,
+    SerializedTypeStorage, SpriteRenderer, Tilemap, TilemapRenderer, Transform,
 };
-use runa_core::glam::{EulerRot, Quat, Vec2, Vec3};
+use runa_core::glam::{EulerRot, Mat4, Quat, Vec2, Vec3};
 use runa_core::ocs::{Object, ObjectId};
 use runa_core::registry::{RegisteredTypeKind, RuntimeRegistry};
 use runa_core::World;
@@ -44,7 +43,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::platform::windows::WindowExtWindows;
+use winit::platform::windows::{WindowAttributesExtWindows, WindowExtWindows};
 use winit::window::{Window, WindowId};
 
 use crate::content_browser::ContentBrowserState;
@@ -99,6 +98,14 @@ struct ProjectLoadResult {
     metadata: ProjectMetadataSnapshot,
 }
 
+struct ProjectVersionPromptState {
+    pending_result: ProjectLoadResult,
+    project_root: PathBuf,
+    project_name: String,
+    project_version: String,
+    editor_version: String,
+}
+
 struct ObjectClipboard {
     asset: WorldObjectAsset,
     cut_id: Option<ObjectId>,
@@ -134,6 +141,16 @@ enum GizmoHandleKind {
     ScaleX,
     ScaleY,
     Rotate,
+    PositionAxis(usize),
+    RotationAxis(usize),
+    ScaleAxis(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ViewportEditMode {
+    Position,
+    Rotation,
+    Scale,
 }
 
 struct ViewportDragState {
@@ -164,12 +181,14 @@ pub struct EditorApp<'window> {
     build_settings_open: bool,
     project_dialog: ProjectDialogState,
     project_session: Option<ProjectSession>,
+    project_version_prompt: Option<ProjectVersionPromptState>,
     startup_project_path: Option<PathBuf>,
     runtime_process: Option<Child>,
     build_process: Option<Child>,
     project_load: Option<Receiver<Result<ProjectLoadResult, String>>>,
     place_object: PlaceObjectState,
     hierarchy_clipboard: Option<ObjectClipboard>,
+    hierarchy_dragging_object: Option<ObjectId>,
     output_lines: Vec<String>,
     output_tx: Sender<String>,
     output_rx: Receiver<String>,
@@ -180,6 +199,7 @@ pub struct EditorApp<'window> {
     pending_viewport_size: (u32, u32),
     viewport_hovered: bool,
     viewport_camera: Option<Camera>,
+    viewport_edit_mode: ViewportEditMode,
     gizmo_enabled: bool,
     show_component_icons: bool,
     show_viewport_grid: bool,
@@ -190,6 +210,7 @@ pub struct EditorApp<'window> {
     modifiers: ModifiersState,
     bottom_tab: BottomTab,
     bottom_bar_height: f32,
+    inspector_panel_width: f32,
     view_settings_open: bool,
     rendering_settings_open: bool,
     gizmo_settings_open: bool,
@@ -213,6 +234,10 @@ impl<'window> EditorApp<'window> {
         let startup_root = std::env::current_dir().unwrap_or_default();
         let (output_tx, output_rx) = mpsc::channel();
         let runtime_engine = Engine::new();
+        let mut settings = EditorSettings::load();
+        if settings.prune_missing_recent_projects() {
+            let _ = settings.save();
+        }
         let mut world = helpers::create_preview_world();
         world.set_runtime_registry(Arc::new(runtime_engine.runtime_registry().clone()));
         let selection = world.find_first_with::<Transform>();
@@ -227,18 +252,20 @@ impl<'window> EditorApp<'window> {
 
         Self {
             output_lines: vec!["Editor started.".to_string()],
-            settings: EditorSettings::load(),
+            settings,
             editor_settings_open: false,
             project_settings_open: false,
             build_settings_open: false,
             project_dialog,
             project_session: None,
+            project_version_prompt: None,
             startup_project_path: project_path,
             runtime_process: None,
             build_process: None,
             project_load: None,
             place_object: PlaceObjectState::default(),
             hierarchy_clipboard: None,
+            hierarchy_dragging_object: None,
             window: None,
             renderer: None,
             egui_state: None,
@@ -258,6 +285,7 @@ impl<'window> EditorApp<'window> {
             pending_viewport_size: style::panel_sizes::INITIAL_VIEWPORT,
             viewport_hovered: false,
             viewport_camera: None,
+            viewport_edit_mode: ViewportEditMode::Position,
             gizmo_enabled: true,
             show_component_icons: true,
             show_viewport_grid: true,
@@ -268,6 +296,7 @@ impl<'window> EditorApp<'window> {
             modifiers: ModifiersState::default(),
             bottom_tab: BottomTab::ContentBrowser,
             bottom_bar_height: style::panel_sizes::BOTTOM_BAR_HEIGHT,
+            inspector_panel_width: 320.0,
             view_settings_open: false,
             rendering_settings_open: false,
             gizmo_settings_open: false,

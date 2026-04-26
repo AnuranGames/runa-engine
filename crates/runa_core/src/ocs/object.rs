@@ -25,6 +25,8 @@ impl ObjectHandle {
 pub struct Object {
     id: Option<ObjectId>,
     pub name: String,
+    parent: Option<ObjectId>,
+    children: Vec<ObjectId>,
     components: HashMap<TypeId, Box<dyn Component>>,
     world_ptr: *mut World,
 }
@@ -58,6 +60,8 @@ impl Object {
         Self {
             id: None,
             name: name.into(),
+            parent: None,
+            children: Vec::new(),
             components,
             world_ptr: std::ptr::null_mut(),
         }
@@ -73,6 +77,32 @@ impl Object {
 
     pub fn handle(&self) -> Option<ObjectHandle> {
         self.id.map(ObjectHandle::new)
+    }
+
+    pub fn parent(&self) -> Option<ObjectId> {
+        self.parent
+    }
+
+    pub fn children(&self) -> &[ObjectId] {
+        &self.children
+    }
+
+    pub(crate) fn set_parent_id(&mut self, parent: Option<ObjectId>) {
+        self.parent = parent;
+    }
+
+    pub(crate) fn add_child_id(&mut self, child: ObjectId) {
+        if !self.children.contains(&child) {
+            self.children.push(child);
+        }
+    }
+
+    pub(crate) fn remove_child_id(&mut self, child: ObjectId) {
+        self.children.retain(|candidate| *candidate != child);
+    }
+
+    pub(crate) fn clear_children(&mut self) {
+        self.children.clear();
     }
 
     pub(crate) fn set_world(&mut self, world: &mut World) {

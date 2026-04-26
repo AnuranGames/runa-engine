@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-alpha.1] - 2026-04-26
+
+### Added
+
+- Added runtime `WorldAtmosphere` with ambient lighting and world-space solid/gradient background rendering.
+- Added `DirectionalLight` and `PointLight` runtime components with editor icons and inspector color picker support.
+- Added a minimal forward lighting path for 3D meshes with ambient, directional, point, emission, and vertex color inputs.
+- Added runtime object hierarchy data: objects can now have a parent and any number of children.
+- Added hierarchy drag-and-drop parenting in the editor.
+- Added world-transform rendering so parent transforms affect child objects while child transform fields remain local.
+- Added a Directional Light direction arrow overlay in the editor viewport.
+
+### Changed
+
+- Mesh rendering now consumes a minimal material shape prepared for future `.runa3d` materials.
+- The editor hierarchy now displays root objects and nested children instead of a flat-only list.
+- World files now serialize atmosphere data and parent links with versioned world asset data.
+
+### Notes
+
+- No release tag has been created for this version yet.
+
 ## [0.4.0-alpha.1] - 2026-04-24
 
 ### Added

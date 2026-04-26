@@ -9,16 +9,18 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
         event_loop.set_control_flow(ControlFlow::Poll);
 
         let window_icon =
-            load_window_icon(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icon.png")).ok();
+            runa_asset::load_window_icon_from_bytes(include_bytes!("../../assets/icon.png")).ok();
         let taskbar_icon =
-            load_window_icon(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/big_icon.png")).ok();
+            runa_asset::load_window_icon_from_bytes(include_bytes!("../../assets/big_icon.png"))
+                .ok();
 
         let window = Arc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
-                        .with_title("Runa Editor")
-                        .with_window_icon(window_icon.clone())
+                        .with_title(&self.window_title())
+                        .with_visible(false)
+                        .with_taskbar_icon(taskbar_icon.clone())
                         .with_inner_size(egui_winit::winit::dpi::LogicalSize::new(1600.0, 960.0))
                         .with_min_inner_size(egui_winit::winit::dpi::LogicalSize::new(
                             1200.0, 720.0,
@@ -48,7 +50,7 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
             Some(renderer.device().limits().max_texture_dimension_2d as usize),
         );
 
-        self.window = Some(window);
+        self.window = Some(window.clone());
         self.renderer = Some(renderer);
         self.egui_renderer = Some(egui_renderer);
         self.egui_state = Some(egui_state);
@@ -69,6 +71,7 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
         self.egui_ctx.set_zoom_factor(self.settings.ui_scale);
         self.content_browser.refresh(&self.settings);
         self.ensure_viewport_target();
+        window.set_visible(true);
 
         if let Some(path) = self.startup_project_path.clone() {
             self.begin_load_project(path);
@@ -81,13 +84,13 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
-        let Some(window) = self.window.as_ref() else {
+        let Some(window) = self.window.clone() else {
             return;
         };
 
-        let camera_captured = self.editor_camera.handle_window_event(window, &event);
+        let camera_captured = self.editor_camera.handle_window_event(&window, &event);
         if let Some(egui_state) = self.egui_state.as_mut() {
-            let response = egui_state.on_window_event(window, &event);
+            let response = egui_state.on_window_event(&window, &event);
             if response.repaint || camera_captured {
                 window.request_redraw();
             }
@@ -106,6 +109,17 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
                 {
                     self.panels.bottom_bar = !self.panels.bottom_bar;
                     window.request_redraw();
+                }
+                if event.state.is_pressed()
+                    && !event.repeat
+                    && !self.editor_camera.is_look_active()
+                    && self.modifiers.control_key()
+                    && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyS))
+                {
+                    self.save_current_world();
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
+                    }
                 }
             }
             WindowEvent::CloseRequested => {
@@ -145,6 +159,7 @@ impl<'window> ApplicationHandler for EditorApp<'window> {
         self.refresh_project_metadata(false);
         self.poll_place_object_refresh();
         if let Some(window) = self.window.as_ref() {
+            window.set_title(&self.window_title());
             window.request_redraw();
         }
     }

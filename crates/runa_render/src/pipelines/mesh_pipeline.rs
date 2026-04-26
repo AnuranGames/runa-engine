@@ -1,12 +1,37 @@
 use wgpu::{include_wgsl, BindGroupLayout, Device, RenderPipeline, TextureFormat};
 
+pub const MAX_POINT_LIGHTS: usize = 16;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PointLightUniform {
+    pub position_radius: [f32; 4],
+    pub color_intensity: [f32; 4],
+    pub params: [f32; 4],
+}
+
+impl Default for PointLightUniform {
+    fn default() -> Self {
+        Self {
+            position_radius: [0.0; 4],
+            color_intensity: [0.0; 4],
+            params: [0.0; 4],
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshUniforms {
     pub view_proj: [[f32; 4]; 4],
-    pub view: [[f32; 4]; 4],
-    pub color: [f32; 4],
-    pub _padding: [f32; 28], // выравнивание до 256 байт
+    pub model: [[f32; 4]; 4],
+    pub base_color: [f32; 4],
+    pub emission: [f32; 4],
+    pub directional_direction: [f32; 4],
+    pub directional_color_intensity: [f32; 4],
+    pub ambient_color_intensity: [f32; 4],
+    pub flags: [u32; 4],
+    pub point_lights: [PointLightUniform; MAX_POINT_LIGHTS],
 }
 
 pub struct MeshPipeline {
@@ -67,6 +92,13 @@ impl MeshPipeline {
                             shader_location: 2,
                             format: wgpu::VertexFormat::Float32x2,
                         },
+                        wgpu::VertexAttribute {
+                            offset: (std::mem::size_of::<[f32; 3]>() * 2
+                                + std::mem::size_of::<[f32; 2]>())
+                                as u64,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
                 compilation_options: Default::default(),
@@ -76,7 +108,7 @@ impl MeshPipeline {
                 entry_point: "fs_main".into(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_format,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -115,4 +147,5 @@ pub struct Vertex3D {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    pub color: [f32; 4],
 }

@@ -172,6 +172,7 @@ fn empty_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Empty".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,
@@ -192,6 +193,7 @@ fn camera_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Camera".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset {
             position: [0.0, 2.0, 6.0],
             ..TransformAsset::default()
@@ -215,6 +217,7 @@ fn cube_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Cube".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset {
             position: [0.0, 0.75, 0.0],
             ..TransformAsset::default()
@@ -244,6 +247,7 @@ fn floor_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Floor".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset {
             position: [0.0, -1.5, 0.0],
             scale: [8.0, 0.2, 8.0],
@@ -274,6 +278,7 @@ fn sprite_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Sprite".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: Some(SpriteRendererAsset {
@@ -298,6 +303,7 @@ fn tilemap_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Tilemap".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,
@@ -332,6 +338,7 @@ fn audio_source_object_asset() -> WorldObjectAsset {
     WorldObjectAsset {
         name: "Audio Source".to_string(),
         object_id: None,
+        parent: None,
         transform: TransformAsset::default(),
         mesh_renderer: None,
         sprite_renderer: None,

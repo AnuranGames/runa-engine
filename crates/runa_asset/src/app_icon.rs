@@ -18,21 +18,22 @@ use winit::window::Icon;
 /// ```
 pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
     let path = path.as_ref();
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("Failed to read icon '{}': {}", path.display(), e))?;
+    load_window_icon_from_bytes(&bytes)
+}
 
-    // Load the image through the image crate
-    let img = image::open(path)
-        .map_err(|e| format!("Failed to load icon '{}': {}", path.display(), e))?;
+pub fn load_window_icon_from_bytes(bytes: &[u8]) -> Result<Icon, String> {
+    let img = image::load_from_memory(bytes)
+        .map_err(|e| format!("Failed to decode icon image: {}", e))?;
 
-    // Convert to RGBA8
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
 
-    // Validate the size (winit expects square icons)
     if width != height {
         return Err(format!("Icon must be square, got {}x{}", width, height));
     }
 
-    // Validate commonly supported icon sizes
     const VALID_SIZES: &[u32] = &[16, 32, 48, 64, 128, 256, 512];
     if !VALID_SIZES.contains(&width) {
         return Err(format!(
@@ -41,7 +42,6 @@ pub fn load_window_icon<P: AsRef<Path>>(path: P) -> Result<Icon, String> {
         ));
     }
 
-    // Create the Icon for winit
     Icon::from_rgba(rgba.to_vec(), width, height)
         .map_err(|e| format!("Failed to create icon: {}", e))
 }

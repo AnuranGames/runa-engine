@@ -1,6 +1,29 @@
 use super::*;
 
 impl<'window> EditorApp<'window> {
+    pub(super) fn return_to_welcome(&mut self) {
+        self.stop_project();
+        if let Some(mut child) = self.build_process.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+
+        self.world = helpers::create_preview_world();
+        self.world
+            .set_runtime_registry(Arc::new(self.runtime_engine.runtime_registry().clone()));
+        self.selection = self.first_object_id();
+        self.project_session = None;
+        self.project_version_prompt = None;
+        self.place_object = PlaceObjectState::default();
+        self.hierarchy_clipboard = None;
+        self.content_browser.set_project_root(
+            dirs::document_dir().unwrap_or_else(helpers::default_browse_root),
+            &self.settings,
+        );
+        self.status_line = "Returned to Welcome screen.".to_string();
+        self.push_output(self.status_line.clone());
+    }
+
     pub(super) fn refresh_project_metadata(&mut self, force: bool) {
         let Some(session) = self.project_session.as_ref() else {
             if force {
@@ -61,10 +84,16 @@ impl<'window> EditorApp<'window> {
     }
 
     pub(super) fn apply_loaded_project(&mut self, result: ProjectLoadResult) {
+        let editor_version = env!("CARGO_PKG_VERSION").to_string();
+        let mut project = result.project.clone();
+        if project.manifest.engine_version != editor_version {
+            project.manifest.engine_version = editor_version.clone();
+            let _ = project.save_manifest();
+        }
         let startup_world_path = result.project.startup_world_path();
         self.project_session = Some(ProjectSession {
             current_world_path: Some(startup_world_path.clone()),
-            project: result.project.clone(),
+            project: project.clone(),
         });
 
         let runtime_registry = self.runtime_engine.runtime_registry().clone();
@@ -85,7 +114,7 @@ impl<'window> EditorApp<'window> {
         self.ensure_world_runtime_registry();
         self.selection = self.first_object_id();
         self.content_browser
-            .set_project_root(result.project.root_dir.clone(), &self.settings);
+            .set_project_root(project.root_dir.clone(), &self.settings);
         let merged_records =
             placeables::merge_placeable_object_records(result.metadata.object_records);
         self.place_object.objects = merged_records
@@ -99,7 +128,11 @@ impl<'window> EditorApp<'window> {
         self.place_object.registered_types = result.metadata.registered_types;
         self.sync_world_serialized_type_metadata();
         self.place_object.source_stamp = None;
-        self.status_line = format!("Opened project {}.", result.project.manifest.name);
+        self.settings
+            .remember_project(project.manifest_path.clone(), project.manifest.name.clone());
+        let _ = self.settings.save();
+        self.project_version_prompt = None;
+        self.status_line = format!("Opened project {}.", project.manifest.name);
         self.push_output(self.status_line.clone());
     }
 
@@ -174,6 +207,9 @@ impl<'window> EditorApp<'window> {
                             return;
                         }
                     }
+                }
+                if let Err(error) = self.save_project_preview() {
+                    self.push_output(format!("Project preview update skipped: {error}"));
                 }
                 self.status_line = format!("Saved world to {}.", path.display());
             }
@@ -399,7 +435,30 @@ impl<'window> EditorApp<'window> {
             Ok(result) => {
                 self.project_load = None;
                 match result {
-                    Ok(result) => self.apply_loaded_project(result),
+                    Ok(result) => {
+                        let editor_version = env!("CARGO_PKG_VERSION").to_string();
+                        let project_version = result.project.manifest.engine_version.clone();
+                        if !project_version.trim().is_empty() && project_version != editor_version {
+                            let project_root = result.project.root_dir.clone();
+                            let project_name = result.project.manifest.name.clone();
+                            self.project_version_prompt = Some(ProjectVersionPromptState {
+                                pending_result: result,
+                                project_root,
+                                project_name,
+                                project_version,
+                                editor_version,
+                            });
+                            self.status_line = format!(
+                                "Project version differs from editor version for {}.",
+                                self.project_version_prompt
+                                    .as_ref()
+                                    .map(|state| state.project_name.as_str())
+                                    .unwrap_or("project")
+                            );
+                        } else {
+                            self.apply_loaded_project(result);
+                        }
+                    }
                     Err(error) => {
                         self.status_line = format!("Failed to open project: {error}");
                         self.push_output(self.status_line.clone());
@@ -440,10 +499,14 @@ impl<'window> EditorApp<'window> {
     }
 
     pub(super) fn window_title(&self) -> String {
+        let version = env!("CARGO_PKG_VERSION");
         if let Some(session) = self.project_session.as_ref() {
-            format!("Runa Editor - {}", session.project.manifest.name)
+            format!(
+                "Runa Editor ({version}) - {}",
+                session.project.manifest.name
+            )
         } else {
-            "Runa Editor".to_string()
+            format!("Runa Editor ({version})")
         }
     }
 
@@ -467,4 +530,139 @@ impl<'window> EditorApp<'window> {
             }
         }
     }
+
+    fn save_project_preview(&mut self) -> Result<(), String> {
+        let Some(session) = self.project_session.as_ref() else {
+            return Err("No project is open.".to_string());
+        };
+        let Some(renderer) = self.renderer.as_ref() else {
+            return Err("Renderer is not initialized.".to_string());
+        };
+        let Some(target) = self.viewport_target.as_ref() else {
+            return Err("Viewport target is not initialized.".to_string());
+        };
+
+        let (width, height, pixels) = renderer.capture_render_target_rgba8(target)?;
+        let image = image::RgbaImage::from_raw(width, height, pixels)
+            .ok_or_else(|| "Failed to build preview image.".to_string())?;
+        let preview =
+            image::imageops::resize(&image, 64, 64, image::imageops::FilterType::Triangle);
+        let preview_path = project_preview_path(&session.project.root_dir);
+        if let Some(parent) = preview_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        preview
+            .save(&preview_path)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn open_project_in_explorer(&mut self, project_root: &std::path::Path) {
+        match Command::new("explorer").arg(project_root).spawn() {
+            Ok(_) => {
+                self.status_line = format!("Opened {} in Explorer.", project_root.display());
+            }
+            Err(error) => {
+                self.status_line = format!("Failed to open Explorer: {error}");
+            }
+        }
+    }
+
+    pub(super) fn open_project_in_code_editor(&mut self) {
+        let Some(session) = self.project_session.as_ref() else {
+            self.status_line = "Open a project first.".to_string();
+            return;
+        };
+
+        let executable = self.settings.external_editor_executable.trim();
+        if executable.is_empty() {
+            self.status_line = "External editor is not configured.".to_string();
+            return;
+        }
+
+        let project = session.project.root_dir.to_string_lossy().to_string();
+        let args: Vec<String> = self
+            .settings
+            .external_editor_project_args
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.replace("{project}", &project))
+            .collect();
+
+        match Command::new(executable).args(args).spawn() {
+            Ok(_) => {
+                self.status_line = format!(
+                    "Opened project {} in external editor.",
+                    session.project.manifest.name
+                );
+            }
+            Err(error) => {
+                self.status_line = format!("Failed to open project in editor: {error}");
+            }
+        }
+    }
+
+    pub(super) fn create_project_backup(
+        &mut self,
+        project_root: &std::path::Path,
+    ) -> Result<PathBuf, String> {
+        let timestamp = chrono_like_timestamp()?;
+        let project_name = project_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("project");
+        let backup_root = project_root
+            .parent()
+            .unwrap_or(project_root)
+            .join(format!("{project_name}_backup_{timestamp}"));
+        copy_directory_recursive(project_root, &backup_root)?;
+        Ok(backup_root)
+    }
+}
+
+pub(super) fn project_preview_path(project_root: &std::path::Path) -> PathBuf {
+    project_root
+        .join(".runa_editor")
+        .join("project-preview.png")
+}
+
+fn chrono_like_timestamp() -> Result<String, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_secs();
+    Ok(now.to_string())
+}
+
+fn copy_directory_recursive(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> Result<(), String> {
+    std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            if source_path.file_name().and_then(|name| name.to_str()) == Some("target") {
+                continue;
+            }
+            copy_directory_recursive(&source_path, &destination_path)?;
+        } else {
+            std::fs::copy(&source_path, &destination_path)
+                .map(|_| ())
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn path_relative_to_project(
+    project_root: &std::path::Path,
+    path: &std::path::Path,
+) -> String {
+    path.strip_prefix(project_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }

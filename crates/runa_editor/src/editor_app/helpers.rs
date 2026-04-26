@@ -1,3 +1,5 @@
+use runa_core::components::DirectionalLight;
+use runa_core::components::PointLight;
 use runa_core::components::Sorting;
 use runa_core::components::SpriteAnimator;
 
@@ -218,6 +220,10 @@ pub(super) fn component_icon_name(type_id: TypeId, kind: ComponentRuntimeKind) -
         "c-Sorting"
     } else if type_id == TypeId::of::<MeshRenderer>() {
         "c-MeshRenderer"
+    } else if type_id == TypeId::of::<DirectionalLight>() {
+        "c-DirectionalLight"
+    } else if type_id == TypeId::of::<PointLight>() {
+        "c-PointLight"
     } else if type_id == TypeId::of::<Tilemap>() || type_id == TypeId::of::<TilemapRenderer>() {
         "c-TilemapRenderer"
     } else if type_id == TypeId::of::<Canvas>() {

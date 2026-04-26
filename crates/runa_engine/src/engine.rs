@@ -3,9 +3,9 @@ use std::sync::Arc;
 use runa_core::{
     components::{
         ui::CanvasSpace, ActiveCamera, AudioListener, AudioSource, Camera, Canvas, Collider2D,
-        Component, CursorInteractable, MeshRenderer, ObjectDefinitionInstance, PhysicsCollision,
-        SerializedTypeStorage, Sorting, SpriteAnimator, SpriteRenderer, Tilemap, TilemapLayer,
-        TilemapRenderer, Transform,
+        Component, CursorInteractable, DirectionalLight, MeshRenderer, ObjectDefinitionInstance,
+        PhysicsCollision, PointLight, SerializedTypeStorage, Sorting, SpriteAnimator,
+        SpriteRenderer, Tilemap, TilemapLayer, TilemapRenderer, Transform,
     },
     glam::USizeVec2,
     ocs::{Object, Script, World},
@@ -199,6 +199,10 @@ impl Engine {
             .register_builtin_component_factory::<MeshRenderer, _>(|| {
                 MeshRenderer::new(runa_core::components::Mesh::cube(1.0))
             });
+        self.runtime_registry
+            .register_builtin_component_factory::<DirectionalLight, _>(DirectionalLight::default);
+        self.runtime_registry
+            .register_builtin_component_factory::<PointLight, _>(PointLight::default);
         self.runtime_registry
             .register_builtin_component::<ObjectDefinitionInstance>();
         self.runtime_registry

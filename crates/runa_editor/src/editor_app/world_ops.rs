@@ -177,7 +177,7 @@ impl<'window> EditorApp<'window> {
         };
     }
 
-    pub(super) fn paste_object(&mut self, _target_id: Option<ObjectId>) {
+    pub(super) fn paste_object(&mut self, target_id: Option<ObjectId>) {
         let Some(clipboard) = self.hierarchy_clipboard.take() else {
             return;
         };
@@ -196,6 +196,9 @@ impl<'window> EditorApp<'window> {
             self.world.despawn(cut_id);
         }
         let new_id = self.world.spawn(object);
+        if let Some(target_id) = target_id {
+            self.world.set_parent(new_id, Some(target_id));
+        }
         self.selection = Some(new_id);
         self.status_line = "Pasted object.".to_string();
     }

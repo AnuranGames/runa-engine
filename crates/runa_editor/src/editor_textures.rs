@@ -139,6 +139,30 @@ fn embedded_editor_icon(icon_name: &str) -> Option<EmbeddedIcon> {
             bytes: include_bytes!("../assets/icons/image.svg"),
             extension: "svg",
         },
+        "Play" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/Play.svg"),
+            extension: "svg",
+        },
+        "position-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/position-icon.svg"),
+            extension: "svg",
+        },
+        "Pause" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/Pause.svg"),
+            extension: "svg",
+        },
+        "rotation-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/rotation-icon.svg"),
+            extension: "svg",
+        },
+        "scale-icon" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/scale-icon.svg"),
+            extension: "svg",
+        },
+        "Stop" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/Stop.svg"),
+            extension: "svg",
+        },
         "question-icon" => EmbeddedIcon {
             bytes: include_bytes!("../assets/icons/question-icon.svg"),
             extension: "svg",
@@ -194,6 +218,10 @@ fn embedded_component_icon(icon_name: &str) -> Option<EmbeddedIcon> {
             bytes: include_bytes!("../assets/icons/components/c-CursorInteractable.png"),
             extension: "png",
         },
+        "c-DirectionalLight" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-DirectionalLight.png"),
+            extension: "png",
+        },
         "c-MeshRenderer" => EmbeddedIcon {
             bytes: include_bytes!("../assets/icons/components/c-MeshRenderer.png"),
             extension: "png",
@@ -204,6 +232,10 @@ fn embedded_component_icon(icon_name: &str) -> Option<EmbeddedIcon> {
         },
         "c-PhysicsCollision" => EmbeddedIcon {
             bytes: include_bytes!("../assets/icons/components/c-PhysicsCollision.png"),
+            extension: "png",
+        },
+        "c-PointLight" => EmbeddedIcon {
+            bytes: include_bytes!("../assets/icons/components/c-PointLight.png"),
             extension: "png",
         },
         "c-Script" => EmbeddedIcon {

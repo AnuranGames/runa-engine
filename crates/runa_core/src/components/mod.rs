@@ -5,6 +5,7 @@ mod camera;
 mod collider2d;
 mod component;
 mod cursor_interactable;
+mod light;
 mod mesh_renderer;
 mod object_definition_instance;
 mod physics_collision;
@@ -15,6 +16,7 @@ mod sprite_renderer;
 mod tilemap;
 mod transform;
 pub mod ui;
+mod world_atmosphere;
 
 pub use active_camera::ActiveCamera;
 pub use audio_listener::AudioListener;
@@ -26,7 +28,9 @@ pub use component::{
     Component, ComponentRuntimeKind, SerializedField, SerializedFieldAccess, SerializedFieldValue,
 };
 pub use cursor_interactable::CursorInteractable;
+pub use light::{DirectionalLight, PointLight};
 pub use mesh_renderer::BuiltinMeshPrimitive;
+pub use mesh_renderer::Material;
 pub use mesh_renderer::Mesh;
 pub use mesh_renderer::MeshRenderer;
 pub use object_definition_instance::ObjectDefinitionInstance;
@@ -41,6 +45,7 @@ pub use tilemap::Tilemap;
 pub use tilemap::TilemapLayer;
 pub use tilemap::TilemapRenderer;
 pub use transform::Transform;
+pub use world_atmosphere::{BackgroundMode, WorldAtmosphere};
 
 pub use ui::Canvas;
 

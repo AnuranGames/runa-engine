@@ -1,14 +1,16 @@
 use std::any::TypeId;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use runa_asset::{AudioAsset, Handle, TextureAsset};
 use runa_core::components::{
-    ActiveCamera, AudioSource, Camera, Collider2D, Mesh, MeshRenderer, ObjectDefinitionInstance,
-    PhysicsCollision, ProjectionType, SerializedField, SerializedTypeEntry, SerializedTypeKind,
-    SerializedTypeStorage, Sorting, SpriteAnimationClip, SpriteAnimator, SpriteRenderer,
-    SpriteSheet, Tilemap, TilemapLayer, TilemapRenderer, Transform, DEFAULT_SPRITE_PIXELS_PER_UNIT,
+    ActiveCamera, AudioSource, BackgroundMode, Camera, Collider2D, Material, Mesh, MeshRenderer,
+    ObjectDefinitionInstance, PhysicsCollision, ProjectionType, SerializedField,
+    SerializedTypeEntry, SerializedTypeKind, SerializedTypeStorage, Sorting, SpriteAnimationClip,
+    SpriteAnimator, SpriteRenderer, SpriteSheet, Tilemap, TilemapLayer, TilemapRenderer, Transform,
+    WorldAtmosphere, DEFAULT_SPRITE_PIXELS_PER_UNIT,
 };
 use runa_core::glam::{IVec2, Quat, USizeVec2, Vec2, Vec3};
 use runa_core::ocs::Object;
@@ -19,13 +21,91 @@ use crate::project::{find_project_manifest, load_project, ProjectError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldAsset {
+    #[serde(default = "default_world_asset_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub atmosphere: WorldAtmosphereAsset,
     pub objects: Vec<WorldObjectAsset>,
+}
+
+fn default_world_asset_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldAtmosphereAsset {
+    #[serde(default = "default_ambient_color")]
+    pub ambient_color: [f32; 3],
+    #[serde(default = "default_ambient_intensity")]
+    pub ambient_intensity: f32,
+    #[serde(default = "default_background_intensity")]
+    pub background_intensity: f32,
+    #[serde(default)]
+    pub background: BackgroundModeAsset,
+}
+
+impl Default for WorldAtmosphereAsset {
+    fn default() -> Self {
+        Self::from_atmosphere(&WorldAtmosphere::default())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BackgroundModeAsset {
+    SolidColor {
+        color: [f32; 3],
+    },
+    VerticalGradient {
+        zenith_color: [f32; 3],
+        horizon_color: [f32; 3],
+        ground_color: [f32; 3],
+        horizon_height: f32,
+        smoothness: f32,
+    },
+    Sky,
+}
+
+impl Default for BackgroundModeAsset {
+    fn default() -> Self {
+        let BackgroundMode::VerticalGradient {
+            zenith_color,
+            horizon_color,
+            ground_color,
+            horizon_height,
+            smoothness,
+        } = BackgroundMode::default()
+        else {
+            unreachable!("default atmosphere background must be a vertical gradient")
+        };
+
+        Self::VerticalGradient {
+            zenith_color: zenith_color.to_array(),
+            horizon_color: horizon_color.to_array(),
+            ground_color: ground_color.to_array(),
+            horizon_height,
+            smoothness,
+        }
+    }
+}
+
+fn default_ambient_color() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+fn default_ambient_intensity() -> f32 {
+    0.15
+}
+
+fn default_background_intensity() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldObjectAsset {
     pub name: String,
     pub object_id: Option<String>,
+    #[serde(default)]
+    pub parent: Option<usize>,
     pub transform: TransformAsset,
     pub mesh_renderer: Option<MeshRendererAsset>,
     pub sprite_renderer: Option<SpriteRendererAsset>,
@@ -325,12 +405,20 @@ where
 
 impl WorldAsset {
     pub fn from_world(world: &World) -> Self {
+        let object_ids = world.query::<Transform>();
+        let object_index: HashMap<_, _> = object_ids
+            .iter()
+            .enumerate()
+            .map(|(index, object_id)| (*object_id, index))
+            .collect();
+
         Self {
-            objects: world
-                .query::<Transform>()
+            version: default_world_asset_version(),
+            atmosphere: WorldAtmosphereAsset::from_atmosphere(world.atmosphere()),
+            objects: object_ids
                 .into_iter()
                 .filter_map(|object_id| world.get(object_id))
-                .map(WorldObjectAsset::from_object)
+                .map(|object| WorldObjectAsset::from_object_with_parent_map(object, &object_index))
                 .collect(),
         }
     }
@@ -341,13 +429,14 @@ impl WorldAsset {
 
     pub fn into_world_with_project_root(self, project_root: Option<&Path>) -> World {
         let mut world = World::default();
-        for object in self
-            .objects
-            .into_iter()
-            .map(|object| object.into_object(project_root))
-        {
-            world.spawn(object);
+        world.set_atmosphere(self.atmosphere.into_atmosphere());
+        let mut parent_links = Vec::new();
+        let mut spawned_ids = Vec::new();
+        for object in self.objects.into_iter() {
+            parent_links.push(object.parent);
+            spawned_ids.push(world.spawn(object.into_object(project_root)));
         }
+        apply_parent_links(&mut world, &spawned_ids, &parent_links);
         world
     }
 
@@ -357,11 +446,16 @@ impl WorldAsset {
         runtime_registry: &runa_core::registry::RuntimeRegistry,
     ) -> World {
         let mut world = World::default();
-        for object in self.objects.into_iter().map(|object| {
-            object.into_object_with_runtime_registry(project_root, Some(runtime_registry))
-        }) {
-            world.spawn(object);
+        world.set_atmosphere(self.atmosphere.into_atmosphere());
+        let mut parent_links = Vec::new();
+        let mut spawned_ids = Vec::new();
+        for object in self.objects.into_iter() {
+            parent_links.push(object.parent);
+            spawned_ids.push(world.spawn(
+                object.into_object_with_runtime_registry(project_root, Some(runtime_registry)),
+            ));
         }
+        apply_parent_links(&mut world, &spawned_ids, &parent_links);
         world
     }
 
@@ -374,19 +468,114 @@ impl WorldAsset {
         F: Fn(&str) -> Option<WorldObjectAsset>,
     {
         let mut world = World::default();
-        for object in self
-            .objects
-            .into_iter()
-            .map(|object| object.into_object_with_object_loader(project_root, &object_loader))
-        {
-            world.spawn(object);
+        world.set_atmosphere(self.atmosphere.into_atmosphere());
+        let mut parent_links = Vec::new();
+        let mut spawned_ids = Vec::new();
+        for object in self.objects.into_iter() {
+            parent_links.push(object.parent);
+            spawned_ids.push(
+                world.spawn(object.into_object_with_object_loader(project_root, &object_loader)),
+            );
         }
+        apply_parent_links(&mut world, &spawned_ids, &parent_links);
         world
+    }
+}
+
+fn apply_parent_links(
+    world: &mut World,
+    spawned_ids: &[runa_core::ocs::ObjectId],
+    parent_links: &[Option<usize>],
+) {
+    for (index, parent_index) in parent_links.iter().enumerate() {
+        let Some(parent_index) = parent_index else {
+            continue;
+        };
+        let (Some(child_id), Some(parent_id)) = (
+            spawned_ids.get(index).copied(),
+            spawned_ids.get(*parent_index).copied(),
+        ) else {
+            continue;
+        };
+        world.set_parent(child_id, Some(parent_id));
+    }
+}
+
+impl WorldAtmosphereAsset {
+    fn from_atmosphere(atmosphere: &WorldAtmosphere) -> Self {
+        Self {
+            ambient_color: atmosphere.ambient_color.to_array(),
+            ambient_intensity: atmosphere.ambient_intensity,
+            background_intensity: atmosphere.background_intensity,
+            background: BackgroundModeAsset::from_background(atmosphere.background),
+        }
+    }
+
+    fn into_atmosphere(self) -> WorldAtmosphere {
+        WorldAtmosphere {
+            ambient_color: Vec3::from_array(self.ambient_color),
+            ambient_intensity: self.ambient_intensity.max(0.0),
+            background_intensity: self.background_intensity.max(0.0),
+            background: self.background.into_background(),
+        }
+    }
+}
+
+impl BackgroundModeAsset {
+    fn from_background(background: BackgroundMode) -> Self {
+        match background {
+            BackgroundMode::SolidColor { color } => Self::SolidColor {
+                color: color.to_array(),
+            },
+            BackgroundMode::VerticalGradient {
+                zenith_color,
+                horizon_color,
+                ground_color,
+                horizon_height,
+                smoothness,
+            } => Self::VerticalGradient {
+                zenith_color: zenith_color.to_array(),
+                horizon_color: horizon_color.to_array(),
+                ground_color: ground_color.to_array(),
+                horizon_height,
+                smoothness,
+            },
+            BackgroundMode::Sky => Self::Sky,
+        }
+    }
+
+    fn into_background(self) -> BackgroundMode {
+        match self {
+            Self::SolidColor { color } => BackgroundMode::SolidColor {
+                color: Vec3::from_array(color),
+            },
+            Self::VerticalGradient {
+                zenith_color,
+                horizon_color,
+                ground_color,
+                horizon_height,
+                smoothness,
+            } => BackgroundMode::VerticalGradient {
+                zenith_color: Vec3::from_array(zenith_color),
+                horizon_color: Vec3::from_array(horizon_color),
+                ground_color: Vec3::from_array(ground_color),
+                horizon_height: horizon_height.clamp(0.0, 1.0),
+                smoothness: smoothness.max(0.001),
+            },
+            Self::Sky => BackgroundMode::Sky,
+        }
     }
 }
 
 impl WorldObjectAsset {
     pub fn from_object(object: &Object) -> Self {
+        Self::from_object_with_parent_map(object, &HashMap::new())
+    }
+
+    fn from_object_with_parent_map(
+        object: &Object,
+        object_index: &HashMap<runa_core::ocs::ObjectId, usize>,
+    ) -> Self {
         let transform = object
             .get_component::<Transform>()
             .cloned()
@@ -397,6 +586,9 @@ impl WorldObjectAsset {
             object_id: object
                 .get_component::<ObjectDefinitionInstance>()
                 .map(|instance| instance.object_id.clone()),
+            parent: object
+                .parent()
+                .and_then(|parent| object_index.get(&parent).copied()),
             transform: TransformAsset::from_transform(&transform),
             mesh_renderer: object
                 .get_component::<MeshRenderer>()
@@ -459,6 +651,7 @@ impl WorldObjectAsset {
             physics_collision,
             serialized_components,
             serialized_scripts,
+            parent: _,
         } = self;
 
         if let (Some(archetype_id), Some(registry)) = (object_id.as_ref(), runtime_registry) {
@@ -919,6 +1112,7 @@ impl MeshRendererAsset {
 
         MeshRenderer {
             mesh,
+            material: Material::default(),
             color: self.color,
         }
     }

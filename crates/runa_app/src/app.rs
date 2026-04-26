@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use runa_core::components::Camera;
+use runa_core::components::{Camera, Transform};
 use runa_core::input::InputState;
 use runa_core::ocs::World;
 use runa_core::systems::InteractionSystem;
@@ -70,18 +70,20 @@ impl<'window> App<'window> {
     ) -> Option<Camera> {
         let object = self.world.get(object_id)?;
         let camera = object.get_component::<Camera>()?;
-        let transform = object.get_component::<runa_core::components::Transform>();
-
-        if let Some(transform) = transform {
+        if let Some(matrix) = self
+            .world
+            .world_transform_matrix(object_id, interpolation_factor)
+        {
             // Camera-follow jitter is very noticeable, so the active camera
             // must be resolved from the same interpolated transform state that
             // the visible object render path uses for this frame.
-            let interpolated_transform = runa_core::components::Transform {
-                position: transform.interpolated_position(interpolation_factor),
-                rotation: transform.interpolated_rotation(interpolation_factor),
-                scale: transform.scale,
-                previous_position: transform.previous_position,
-                previous_rotation: transform.previous_rotation,
+            let (scale, rotation, position) = matrix.to_scale_rotation_translation();
+            let interpolated_transform = Transform {
+                position,
+                rotation,
+                scale,
+                previous_position: position,
+                previous_rotation: rotation,
             };
             Some(camera.resolved_with_transform(Some(&interpolated_transform)))
         } else {
@@ -92,7 +94,19 @@ impl<'window> App<'window> {
     fn resolved_camera_for_object(&self, object_id: runa_core::ocs::ObjectId) -> Option<Camera> {
         let object = self.world.get(object_id)?;
         let camera = object.get_component::<Camera>()?;
-        Some(camera.resolved_with_transform(object.get_component()))
+        if let Some(matrix) = self.world.world_transform_matrix(object_id, 1.0) {
+            let (scale, rotation, position) = matrix.to_scale_rotation_translation();
+            let transform = Transform {
+                position,
+                rotation,
+                scale,
+                previous_position: position,
+                previous_rotation: rotation,
+            };
+            Some(camera.resolved_with_transform(Some(&transform)))
+        } else {
+            Some(*camera)
+        }
     }
 
     fn active_camera_id(&self) -> Option<runa_core::ocs::ObjectId> {

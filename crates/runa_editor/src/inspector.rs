@@ -10,9 +10,10 @@ use runa_asset::loader::load_image;
 use runa_asset::AudioAsset;
 use runa_core::components::{
     ActiveCamera, AudioListener, AudioSource, BuiltinMeshPrimitive, Camera, Canvas, Collider2D,
-    ComponentRuntimeKind, CursorInteractable, MeshRenderer, PhysicsCollision, ProjectionType,
-    SerializedField, SerializedFieldValue, SerializedTypeKind, SerializedTypeStorage, Sorting,
-    SpriteAnimationClip, SpriteAnimator, SpriteRenderer, Tilemap, TilemapRenderer, Transform,
+    ComponentRuntimeKind, CursorInteractable, DirectionalLight, MeshRenderer, PhysicsCollision,
+    PointLight, ProjectionType, SerializedField, SerializedFieldValue, SerializedTypeKind,
+    SerializedTypeStorage, Sorting, SpriteAnimationClip, SpriteAnimator, SpriteRenderer, Tilemap,
+    TilemapRenderer, Transform,
 };
 use runa_core::glam::{EulerRot, Quat, USizeVec2, Vec3};
 use runa_core::ocs::Object;
@@ -529,8 +530,10 @@ fn components_section(
                 });
 
                 let mut remove_clip = None;
+                let mut move_clip = None;
                 let mut play_clip = None;
                 let max_frame = animator.sheet.frame_count().saturating_sub(1);
+                let clip_count = animator.clips.len();
                 let can_remove_clip = animator.clips.len() > 1;
                 for (index, clip) in animator.clips.iter_mut().enumerate() {
                     egui::CollapsingHeader::new(clip.name.clone())
@@ -566,6 +569,15 @@ fn components_section(
                             });
                             bool_row(ui, "Loop", &mut clip.looping);
                             property_row(ui, "Actions", |ui| {
+                                if ui.add_enabled(index > 0, egui::Button::new("Up")).clicked() {
+                                    move_clip = Some((index, index - 1));
+                                }
+                                if ui
+                                    .add_enabled(index + 1 < clip_count, egui::Button::new("Down"))
+                                    .clicked()
+                                {
+                                    move_clip = Some((index, index + 1));
+                                }
                                 if ui.button("Play").clicked() {
                                     play_clip = Some((clip.name.clone(), clip.start_frame));
                                 }
@@ -582,6 +594,9 @@ fn components_section(
                     animator.current_clip = Some(name);
                     animator.current_frame = start_frame;
                     animator.playing = true;
+                }
+                if let Some((from, to)) = move_clip {
+                    animator.clips.swap(from, to);
                 }
                 if let Some(index) = remove_clip {
                     let removed = animator.clips.remove(index);
@@ -753,6 +768,8 @@ fn components_section(
                                 ));
                         }
                     });
+                    let layer_count = tilemap.layers.len();
+                    let mut move_layer = None;
                     for (index, layer) in tilemap.layers.iter_mut().enumerate() {
                         egui::CollapsingHeader::new(layer.name.clone())
                             .id_salt(("tilemap_layer", index))
@@ -775,7 +792,25 @@ fn components_section(
                                             .speed(0.01),
                                     );
                                 });
+                                property_row(ui, "Actions", |ui| {
+                                    if ui.add_enabled(index > 0, egui::Button::new("Up")).clicked()
+                                    {
+                                        move_layer = Some((index, index - 1));
+                                    }
+                                    if ui
+                                        .add_enabled(
+                                            index + 1 < layer_count,
+                                            egui::Button::new("Down"),
+                                        )
+                                        .clicked()
+                                    {
+                                        move_layer = Some((index, index + 1));
+                                    }
+                                });
                             });
+                    }
+                    if let Some((from, to)) = move_layer {
+                        tilemap.layers.swap(from, to);
                     }
                     if let Some(error) = error_message {
                         ui.colored_label(style::ERROR_COLOR, error);
@@ -1357,11 +1392,15 @@ fn serialized_field_row(ui: &mut Ui, object: &mut Object, type_id: TypeId, field
         }
         SerializedFieldValue::Vec3(mut value) => {
             let mut changed = false;
-            property_row(ui, &field.name, |ui| {
-                changed |= axis_drag(ui, "X", &mut value[0], 0.05);
-                changed |= axis_drag(ui, "Y", &mut value[1], 0.05);
-                changed |= axis_drag(ui, "Z", &mut value[2], 0.05);
-            });
+            if is_color_field(&field.name) {
+                color_vec3_editor(ui, &field.name, &mut value, &mut changed);
+            } else {
+                property_row(ui, &field.name, |ui| {
+                    changed |= axis_drag(ui, "X", &mut value[0], 0.05);
+                    changed |= axis_drag(ui, "Y", &mut value[1], 0.05);
+                    changed |= axis_drag(ui, "Z", &mut value[2], 0.05);
+                });
+            }
             if changed {
                 let _ = object.with_component_mut_by_type_id(type_id, |component| {
                     component.set_serialized_field(&field.name, SerializedFieldValue::Vec3(value))
@@ -1429,11 +1468,16 @@ fn serialized_field_asset_row(ui: &mut Ui, field: &mut SerializedField) {
             });
         }
         SerializedFieldValue::Vec3(value) => {
-            property_row(ui, &field.name, |ui| {
-                axis_drag(ui, "X", &mut value[0], 0.05);
-                axis_drag(ui, "Y", &mut value[1], 0.05);
-                axis_drag(ui, "Z", &mut value[2], 0.05);
-            });
+            if is_color_field(&field.name) {
+                let mut changed = false;
+                color_vec3_editor(ui, &field.name, value, &mut changed);
+            } else {
+                property_row(ui, &field.name, |ui| {
+                    axis_drag(ui, "X", &mut value[0], 0.05);
+                    axis_drag(ui, "Y", &mut value[1], 0.05);
+                    axis_drag(ui, "Z", &mut value[2], 0.05);
+                });
+            }
         }
     }
 }
@@ -1477,13 +1521,18 @@ fn quat_editor(ui: &mut Ui, transform: &mut Transform) {
 
 fn color_editor(ui: &mut Ui, label: &str, color: &mut [f32; 4]) {
     property_row(ui, label, |ui| {
-        for channel in color.iter_mut() {
-            ui.add_sized(
-                [70.0, 22.0],
-                egui::DragValue::new(channel).range(0.0..=1.0).speed(0.01),
-            );
-        }
+        ui.color_edit_button_rgba_unmultiplied(color);
     });
+}
+
+fn color_vec3_editor(ui: &mut Ui, label: &str, color: &mut [f32; 3], changed: &mut bool) {
+    property_row(ui, label, |ui| {
+        *changed |= ui.color_edit_button_rgb(color).changed();
+    });
+}
+
+fn is_color_field(name: &str) -> bool {
+    name.to_ascii_lowercase().contains("color")
 }
 
 fn component_badge(ui: &mut Ui, label: &str, description: &str) {
@@ -1920,6 +1969,10 @@ fn component_icon_name(type_id: TypeId, kind: ComponentRuntimeKind) -> &'static 
         "c-Canvas"
     } else if type_id == TypeId::of::<MeshRenderer>() {
         "c-MeshRenderer"
+    } else if type_id == TypeId::of::<DirectionalLight>() {
+        "c-DirectionalLight"
+    } else if type_id == TypeId::of::<PointLight>() {
+        "c-PointLight"
     } else if type_id == TypeId::of::<SpriteRenderer>() {
         "c-SpriteRenderer"
     } else if type_id == TypeId::of::<SpriteAnimator>() {
@@ -1944,6 +1997,7 @@ fn is_supported_component_type(type_id: TypeId) -> bool {
         TypeId::of::<SpriteAnimator>(),
         TypeId::of::<Sorting>(),
         TypeId::of::<TilemapRenderer>(),
+        TypeId::of::<Collider2D>(),
         TypeId::of::<AudioSource>(),
         TypeId::of::<AudioListener>(),
         TypeId::of::<CursorInteractable>(),

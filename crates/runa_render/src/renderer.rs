@@ -1,13 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    font::FontManager, pipelines::MeshPipeline, pipelines::MeshUniforms, pipelines::SpritePipeline,
-    pipelines::UIPipeline, pipelines::UITexturedVertex, pipelines::UIUniforms, pipelines::UIVertex,
+    font::FontManager, pipelines::BackgroundPipeline, pipelines::BackgroundUniforms,
+    pipelines::MeshPipeline, pipelines::MeshUniforms, pipelines::PointLightUniform,
+    pipelines::SpritePipeline, pipelines::UIPipeline, pipelines::UITexturedVertex,
+    pipelines::UIUniforms, pipelines::UIVertex, pipelines::MAX_POINT_LIGHTS,
     resources::texture::GpuTexture,
 };
 use glam::Vec2;
 use runa_asset::TextureAsset;
-use runa_render_api::{RenderCommands, RenderQueue};
+use runa_render_api::{BackgroundModeData, RenderCommands, RenderQueue};
 use wgpu::util::DeviceExt;
 use wgpu::{MemoryHints::Performance, Trace};
 use wgpu::{Texture, TextureView};
@@ -21,10 +23,10 @@ pub struct InstanceData {
     pub position: [f32; 3],  // x, y, z
     pub rotation: f32,       // radians
     pub scale: [f32; 3],     // x, y, z
+    pub color: [f32; 4],     // rgba tint
     pub uv_offset: [f32; 2], // left-bottom UV coordinates
     pub uv_size: [f32; 2],   // UV quad size
     pub flip: u32,           // bit 0 = flip_x, bit 1 = flip_y
-    pub _pad: f32,
 }
 
 /// Vertex structure for sprite quads.
@@ -78,6 +80,7 @@ pub struct Renderer<'window> {
     queue: wgpu::Queue,
 
     sprite_pipeline: SpritePipeline,
+    background_pipeline: BackgroundPipeline,
 
     mesh_pipeline: MeshPipeline,
 
@@ -200,6 +203,7 @@ impl<'window> Renderer<'window> {
             surface_config.format,
             wgpu::TextureFormat::Depth32Float,
         );
+        let background_pipeline = BackgroundPipeline::new(&device, surface_config.format);
 
         let identity_mat = glam::Mat4::IDENTITY.to_cols_array_2d();
         let globals = Globals {
@@ -319,6 +323,7 @@ impl<'window> Renderer<'window> {
             device,
             queue,
             sprite_pipeline,
+            background_pipeline,
             mesh_pipeline,
             ui_pipeline,
             ui_uniform_buffer,
@@ -348,6 +353,93 @@ impl<'window> Renderer<'window> {
 
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
+    }
+
+    pub fn capture_render_target_rgba8(
+        &self,
+        target: &RenderTarget,
+    ) -> Result<(u32, u32, Vec<u8>), String> {
+        let (width, height) = target.size();
+        let bytes_per_pixel = 4u32;
+        let unpadded_bytes_per_row = width * bytes_per_pixel;
+        let padded_bytes_per_row = unpadded_bytes_per_row
+            .div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let output_size = padded_bytes_per_row as u64 * height as u64;
+
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Render Target Readback"),
+            size: output_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Target Readback Encoder"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target._color_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result.map_err(|error| error.to_string()));
+        });
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv()
+            .map_err(|error| error.to_string())?
+            .map_err(|error| format!("Failed to map readback buffer: {error}"))?;
+
+        let mapped = slice.get_mapped_range();
+        let mut pixels = vec![0u8; (width * height * bytes_per_pixel) as usize];
+        let is_bgra = matches!(
+            target._sample_format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+
+        for row in 0..height as usize {
+            let src_offset = row * padded_bytes_per_row as usize;
+            let dst_offset = row * unpadded_bytes_per_row as usize;
+            let src = &mapped[src_offset..src_offset + unpadded_bytes_per_row as usize];
+            let dst = &mut pixels[dst_offset..dst_offset + unpadded_bytes_per_row as usize];
+
+            if is_bgra {
+                for (src_px, dst_px) in src.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+                    dst_px[0] = src_px[2];
+                    dst_px[1] = src_px[1];
+                    dst_px[2] = src_px[0];
+                    dst_px[3] = src_px[3];
+                }
+            } else {
+                dst.copy_from_slice(src);
+            }
+        }
+
+        drop(mapped);
+        buffer.unmap();
+        Ok((width, height, pixels))
     }
 
     pub fn surface_format(&self) -> wgpu::TextureFormat {
@@ -471,19 +563,44 @@ impl<'window> Renderer<'window> {
         self.queue
             .write_buffer(&self.ui_uniform_buffer, 0, bytemuck::bytes_of(&ui_uniforms));
 
+        self.encode_background_pass(encoder, target_view, &queue.atmosphere, camera_matrix);
+
         let mut all_instances = Vec::new();
-        let mut sprite_instances = Vec::new();
+        let mut sprite_instances: Vec<(i32, f32, usize, usize, InstanceData)> = Vec::new();
+        let mut mesh_items: Vec<(i32, f32, usize)> = Vec::new();
         let mut ui_vertices = Vec::new();
         let mut ui_text_vertices = Vec::new();
+        let has_lighting = !queue.directional_lights.is_empty() || !queue.point_lights.is_empty();
+        let directional = queue.directional_lights.first().copied();
+        let mut point_lights = [PointLightUniform::default(); MAX_POINT_LIGHTS];
+        for (target, light) in point_lights
+            .iter_mut()
+            .zip(queue.point_lights.iter().take(MAX_POINT_LIGHTS))
+        {
+            *target = PointLightUniform {
+                position_radius: [
+                    light.position.x,
+                    light.position.y,
+                    light.position.z,
+                    light.radius,
+                ],
+                color_intensity: [light.color.x, light.color.y, light.color.z, light.intensity],
+                params: [light.falloff, 0.0, 0.0, 0.0],
+            };
+        }
+        let point_light_count = queue.point_lights.len().min(MAX_POINT_LIGHTS) as u32;
 
-        for cmd in &queue.commands {
+        for (cmd_index, cmd) in queue.commands.iter().enumerate() {
             match cmd {
-                RenderCommands::Mesh3D { .. } => {}
+                RenderCommands::Mesh3D { order, depth, .. } => {
+                    mesh_items.push((*order, *depth, cmd_index));
+                }
                 RenderCommands::Sprite {
                     texture,
                     position,
                     rotation,
                     scale,
+                    color,
                     uv_rect,
                     order,
                 } => {
@@ -497,10 +614,10 @@ impl<'window> Renderer<'window> {
                         position: [position.x, position.y, position.z],
                         rotation: rotation.z,
                         scale: [world_scale_x, world_scale_y, 1.0],
+                        color: *color,
                         uv_offset: [uv_rect[0], uv_rect[1]],
                         uv_size: [uv_rect[2], uv_rect[3]],
                         flip: 0,
-                        _pad: 0.0,
                     };
 
                     let key = Arc::as_ptr(texture) as usize;
@@ -508,7 +625,7 @@ impl<'window> Renderer<'window> {
                         self.textures_cache.insert(key, texture.clone());
                     }
 
-                    sprite_instances.push((*order, position.z, key, instance));
+                    sprite_instances.push((*order, position.z, cmd_index, key, instance));
                 }
                 RenderCommands::Tile {
                     texture,
@@ -517,17 +634,17 @@ impl<'window> Renderer<'window> {
                     uv_rect,
                     flip_x,
                     flip_y,
-                    color: _,
+                    color,
                     order,
                 } => {
                     let instance = InstanceData {
                         position: [position.x, position.y, position.z],
                         rotation: 0.0,
                         scale: [size.x, size.y, 1.0],
+                        color: *color,
                         uv_offset: [uv_rect[0], uv_rect[1]],
                         uv_size: [uv_rect[2], uv_rect[3]],
                         flip: ((*flip_x) as u32) | (((*flip_y) as u32) << 1),
-                        _pad: 0.0,
                     };
 
                     let key = Arc::as_ptr(texture) as usize;
@@ -535,7 +652,7 @@ impl<'window> Renderer<'window> {
                         self.textures_cache.insert(key, texture.clone());
                     }
 
-                    sprite_instances.push((*order, position.z, key, instance));
+                    sprite_instances.push((*order, position.z, cmd_index, key, instance));
                 }
                 RenderCommands::DebugRect {
                     position,
@@ -719,17 +836,20 @@ impl<'window> Renderer<'window> {
         }
 
         sprite_instances.sort_by(|left, right| {
-            left.0.cmp(&right.0).then_with(|| {
-                left.1
-                    .partial_cmp(&right.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
+            left.0
+                .cmp(&right.0)
+                .then_with(|| {
+                    left.1
+                        .partial_cmp(&right.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| left.2.cmp(&right.2))
         });
-        let mut batches = Vec::new();
-        for (_, _, texture_key, instance) in sprite_instances {
+        let mut batches: Vec<(i32, f32, usize, usize, usize, usize)> = Vec::new();
+        for (order, depth, sequence, texture_key, instance) in sprite_instances {
             let offset = all_instances.len();
             all_instances.push(instance);
-            batches.push((texture_key, offset, 1));
+            batches.push((order, depth, sequence, texture_key, offset, 1));
         }
 
         if all_instances.len() > self.instance_buffer_capacity {
@@ -757,7 +877,7 @@ impl<'window> Renderer<'window> {
                 view: target_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -773,20 +893,66 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        for cmd in &queue.commands {
-            if let RenderCommands::Mesh3D {
-                vertices,
-                indices,
-                model_matrix,
-                color,
-            } = cmd
-            {
-                let mvp_matrix = camera_matrix * model_matrix;
+        let mut orders: Vec<i32> = mesh_items
+            .iter()
+            .map(|(order, _, _)| *order)
+            .chain(batches.iter().map(|(order, _, _, _, _, _)| *order))
+            .collect();
+        orders.sort_unstable();
+        orders.dedup();
+
+        for order in orders {
+            let mut order_meshes: Vec<(f32, usize)> = mesh_items
+                .iter()
+                .filter(|(mesh_order, _, _)| *mesh_order == order)
+                .map(|(_, depth, index)| (*depth, *index))
+                .collect();
+            order_meshes.sort_by(|left, right| {
+                left.0
+                    .partial_cmp(&right.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            for (_, cmd_index) in order_meshes {
+                let RenderCommands::Mesh3D {
+                    vertices,
+                    indices,
+                    model_matrix,
+                    color,
+                    emission,
+                    use_vertex_color,
+                    ..
+                } = &queue.commands[cmd_index]
+                else {
+                    continue;
+                };
+
+                let directional_direction = directional
+                    .map(|light| [light.direction.x, light.direction.y, light.direction.z, 0.0])
+                    .unwrap_or([0.0, -1.0, 0.0, 0.0]);
+                let directional_color_intensity = directional
+                    .map(|light| [light.color.x, light.color.y, light.color.z, light.intensity])
+                    .unwrap_or([0.0, 0.0, 0.0, 0.0]);
                 let mesh_uniforms = MeshUniforms {
-                    view_proj: mvp_matrix.to_cols_array_2d(),
-                    view: glam::Mat4::IDENTITY.to_cols_array_2d(),
-                    color: *color,
-                    _padding: [0.0; 28],
+                    view_proj: camera_matrix.to_cols_array_2d(),
+                    model: model_matrix.to_cols_array_2d(),
+                    base_color: *color,
+                    emission: [emission[0], emission[1], emission[2], 0.0],
+                    directional_direction,
+                    directional_color_intensity,
+                    ambient_color_intensity: [
+                        queue.atmosphere.ambient_color.x,
+                        queue.atmosphere.ambient_color.y,
+                        queue.atmosphere.ambient_color.z,
+                        queue.atmosphere.ambient_intensity,
+                    ],
+                    flags: [
+                        has_lighting as u32,
+                        *use_vertex_color as u32,
+                        point_light_count,
+                        directional.is_some() as u32,
+                    ],
+                    point_lights,
                 };
                 let mesh_uniform_buffer =
                     self.device
@@ -830,45 +996,52 @@ impl<'window> Renderer<'window> {
                 rpass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 rpass.draw_indexed(0..indices.len() as u32, 0, 0..1);
             }
-        }
 
-        for (texture_key, instance_offset, instance_count) in batches {
-            if !self.textures.contains_key(&texture_key) {
-                let texture = self.textures_cache.get(&texture_key).unwrap();
-                let gpu_tex = Arc::new(GpuTexture::from_asset(&self.device, &self.queue, texture));
-                self.textures.insert(texture_key, gpu_tex);
+            for (_, _, _, texture_key, instance_offset, instance_count) in batches
+                .iter()
+                .filter(|(sprite_order, _, _, _, _, _)| *sprite_order == order)
+            {
+                if !self.textures.contains_key(texture_key) {
+                    let texture = self.textures_cache.get(texture_key).unwrap();
+                    let gpu_tex =
+                        Arc::new(GpuTexture::from_asset(&self.device, &self.queue, texture));
+                    self.textures.insert(*texture_key, gpu_tex);
+                }
+                let gpu_texture = self.textures.get(texture_key).unwrap().clone();
+
+                let bind_group = self
+                    .bind_group_cache
+                    .entry(*texture_key)
+                    .or_insert_with(|| {
+                        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            layout: &self.sprite_pipeline.bind_group_layout,
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: self.globals_buffer.as_entire_binding(),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: wgpu::BindingResource::TextureView(&gpu_texture.view),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 2,
+                                    resource: wgpu::BindingResource::Sampler(&self.nearest_sampler),
+                                },
+                            ],
+                            label: Some("BindGroup"),
+                        })
+                    });
+
+                rpass.set_pipeline(&self.sprite_pipeline.pipeline);
+                rpass.set_bind_group(0, &*bind_group, &[]);
+                rpass.set_vertex_buffer(0, self.quad_buffer.slice(..));
+                rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                rpass.draw(
+                    0..6,
+                    *instance_offset as u32..(*instance_offset + *instance_count) as u32,
+                );
             }
-            let gpu_texture = self.textures.get(&texture_key).unwrap().clone();
-
-            let bind_group = self.bind_group_cache.entry(texture_key).or_insert_with(|| {
-                self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout: &self.sprite_pipeline.bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: self.globals_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::TextureView(&gpu_texture.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Sampler(&self.nearest_sampler),
-                        },
-                    ],
-                    label: Some("BindGroup"),
-                })
-            });
-
-            rpass.set_pipeline(&self.sprite_pipeline.pipeline);
-            rpass.set_bind_group(0, &*bind_group, &[]);
-            rpass.set_vertex_buffer(0, self.quad_buffer.slice(..));
-            rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            rpass.draw(
-                0..6,
-                instance_offset as u32..(instance_offset + instance_count) as u32,
-            );
         }
 
         if !ui_vertices.is_empty() {
@@ -928,6 +1101,51 @@ impl<'window> Renderer<'window> {
         }
     }
 
+    fn encode_background_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &TextureView,
+        atmosphere: &runa_render_api::AtmosphereData,
+        camera_matrix: glam::Mat4,
+    ) {
+        let uniforms = background_uniforms(atmosphere, camera_matrix);
+        let buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Background Uniform Buffer"),
+                contents: bytemuck::bytes_of(&uniforms),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Background Bind Group"),
+            layout: &self.background_pipeline.bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Background Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            ..Default::default()
+        });
+
+        rpass.set_pipeline(&self.background_pipeline.pipeline);
+        rpass.set_bind_group(0, &bind_group, &[]);
+        rpass.draw(0..3, 0..1);
+    }
+
     fn build_render_target(
         device: &wgpu::Device,
         size: (u32, u32),
@@ -950,7 +1168,9 @@ impl<'window> Renderer<'window> {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: sample_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &view_formats,
         });
         let render_color_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
@@ -993,4 +1213,54 @@ impl<'window> Renderer<'window> {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
     }
+}
+
+fn background_uniforms(
+    atmosphere: &runa_render_api::AtmosphereData,
+    camera_matrix: glam::Mat4,
+) -> BackgroundUniforms {
+    let mut uniforms = BackgroundUniforms {
+        inverse_view_proj: camera_matrix.inverse().to_cols_array_2d(),
+        mode: [1, 0, 0, 0],
+        background_params: [atmosphere.background_intensity, 0.0, 0.0, 0.0],
+        solid_color: [0.0, 0.0, 0.0, 1.0],
+        zenith_color: [0.2, 0.4, 0.8, 0.5],
+        horizon_color: [0.8, 0.9, 1.0, 0.25],
+        ground_color: [0.6, 0.6, 0.7, 0.0],
+    };
+
+    match atmosphere.background {
+        BackgroundModeData::SolidColor { color } => {
+            uniforms.mode = [0, 0, 0, 0];
+            uniforms.solid_color = [color.x, color.y, color.z, 1.0];
+        }
+        BackgroundModeData::VerticalGradient {
+            zenith_color,
+            horizon_color,
+            ground_color,
+            horizon_height,
+            smoothness,
+        } => {
+            uniforms.mode = [1, 0, 0, 0];
+            uniforms.zenith_color = [
+                zenith_color.x,
+                zenith_color.y,
+                zenith_color.z,
+                horizon_height.clamp(0.0, 1.0),
+            ];
+            uniforms.horizon_color = [
+                horizon_color.x,
+                horizon_color.y,
+                horizon_color.z,
+                smoothness.max(0.001),
+            ];
+            uniforms.ground_color = [ground_color.x, ground_color.y, ground_color.z, 0.0];
+        }
+        BackgroundModeData::Sky => {
+            // TODO: Route this to a skybox/skysphere/HDRI pass. For now, keep gradient fallback.
+            uniforms.mode = [2, 0, 0, 0];
+        }
+    }
+
+    uniforms
 }

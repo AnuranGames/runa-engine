@@ -38,10 +38,10 @@ impl SpritePipeline {
                     2 => Float32x3, // position
                     3 => Float32,   // rotation
                     4 => Float32x3, // scale
-                    5 => Float32x2,
+                    5 => Float32x4, // color
                     6 => Float32x2,
-                    7 => Uint32,
-                    8 => Float32,   // _pad
+                    7 => Float32x2,
+                    8 => Uint32,
                 ],
             },
         ];
@@ -110,8 +110,8 @@ impl SpritePipeline {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: depth_format,
-                depth_write_enabled: Some(false), // Sprites don't write to depth
-                depth_compare: Some(wgpu::CompareFunction::Always), // Always pass depth test
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),

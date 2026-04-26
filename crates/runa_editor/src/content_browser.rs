@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,13 +7,14 @@ use egui::{Color32, RichText, TextureHandle, Ui, Vec2};
 use rfd::FileDialog;
 
 use crate::editor_settings::EditorSettings;
-use crate::editor_textures::load_editor_icon;
+use crate::editor_textures::{load_editor_icon, load_texture_from_path};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AssetKind {
     Directory,
     GenericFile,
     RustFile,
+    WorldFile,
     ImageFile,
     AudioFile,
     ShaderFile,
@@ -39,6 +40,7 @@ struct ContentBrowserIcons {
     folder_open: TextureHandle,
     file: TextureHandle,
     rust_file: TextureHandle,
+    world_file: TextureHandle,
     image_file: TextureHandle,
     audio_file: TextureHandle,
     shader_file: TextureHandle,
@@ -62,10 +64,13 @@ pub struct ContentBrowserState {
     entries: Vec<ContentEntry>,
     sidebar_width: f32,
     icons: Option<ContentBrowserIcons>,
+    image_previews: HashMap<PathBuf, TextureHandle>,
     selected_path: Option<PathBuf>,
+    dragging_asset_path: Option<PathBuf>,
     rename_state: Option<RenameState>,
     clipboard: Option<ClipboardEntry>,
     pending_open_dir: Option<PathBuf>,
+    pending_open_world: Option<PathBuf>,
     last_message: Option<String>,
     expanded_dirs: HashSet<PathBuf>,
 }
@@ -81,10 +86,13 @@ impl ContentBrowserState {
             entries,
             sidebar_width: 220.0,
             icons: None,
+            image_previews: HashMap::new(),
             selected_path: None,
+            dragging_asset_path: None,
             rename_state: None,
             clipboard: None,
             pending_open_dir: None,
+            pending_open_world: None,
             last_message: None,
             expanded_dirs,
         }
@@ -99,7 +107,9 @@ impl ContentBrowserState {
             settings.show_hidden_files,
         );
         self.selected_path = None;
+        self.dragging_asset_path = None;
         self.rename_state = None;
+        self.pending_open_world = None;
     }
 
     pub fn refresh(&mut self, settings: &EditorSettings) {
@@ -108,14 +118,19 @@ impl ContentBrowserState {
             &self.current_dir,
             settings.show_hidden_files,
         );
+        self.image_previews
+            .retain(|path, _| path.exists() && path.starts_with(&self.project_root));
     }
 
     pub fn set_project_root(&mut self, project_root: PathBuf, settings: &EditorSettings) {
         self.project_root = project_root.clone();
         self.current_dir = project_root.clone();
         self.selected_path = None;
+        self.dragging_asset_path = None;
         self.rename_state = None;
         self.clipboard = None;
+        self.pending_open_world = None;
+        self.image_previews.clear();
         self.expanded_dirs.clear();
         self.expanded_dirs.insert(project_root);
         self.refresh(settings);
@@ -123,6 +138,10 @@ impl ContentBrowserState {
 
     pub fn take_message(&mut self) -> Option<String> {
         self.last_message.take()
+    }
+
+    pub fn take_pending_world_open(&mut self) -> Option<PathBuf> {
+        self.pending_open_world.take()
     }
 
     pub fn current_dir_display(&self) -> String {
@@ -256,6 +275,14 @@ impl ContentBrowserState {
         if let Some(dir) = self.pending_open_dir.take() {
             self.open_dir(dir, settings);
         }
+
+        if !ui.ctx().input(|input| input.pointer.primary_down()) {
+            self.dragging_asset_path = None;
+        }
+    }
+
+    pub fn is_dragging_asset(&self) -> bool {
+        self.dragging_asset_path.is_some()
     }
 
     fn handle_shortcuts(&mut self, ui: &Ui) {
@@ -305,8 +332,10 @@ impl ContentBrowserState {
             .map(|state| state.path == entry.full_path)
             .unwrap_or(false);
 
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(cell_width, cell_height), egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(
+            egui::vec2(cell_width, cell_height),
+            egui::Sense::click_and_drag(),
+        );
         let visuals = ui.visuals();
         let fill = if selected {
             visuals.selection.bg_fill
@@ -333,13 +362,7 @@ impl ContentBrowserState {
             Color32::WHITE
         };
 
-        let icon = self.icon_for(entry, settings);
-        child.add(
-            egui::Image::new(icon)
-                .fit_to_exact_size(Vec2::splat(settings.content_icon_size))
-                .tint(content_tint)
-                .sense(egui::Sense::hover()),
-        );
+        self.draw_content_preview(&mut child, entry, settings, content_tint);
         child.add_space(8.0);
 
         if is_renaming {
@@ -377,13 +400,22 @@ impl ContentBrowserState {
         if response.clicked() {
             self.selected_path = Some(entry.full_path.clone());
         }
+        if response.drag_started() || response.dragged() {
+            self.selected_path = Some(entry.full_path.clone());
+            self.dragging_asset_path = Some(entry.full_path.clone());
+        }
         if response.double_clicked() {
             self.selected_path = Some(entry.full_path.clone());
             if entry.is_dir() {
                 self.pending_open_dir = Some(entry.full_path.clone());
             } else {
-                self.edit_file(entry, settings);
+                self.open_entry(entry, settings);
             }
+        }
+        if response.dragged() {
+            response
+                .clone()
+                .on_hover_text(format!("Dragging {}", entry.name));
         }
 
         let entry_clone = entry.clone();
@@ -424,6 +456,10 @@ impl ContentBrowserState {
                 self.create_wgsl_shader(&target_directory(&entry_clone.full_path), settings);
                 ui.close();
             }
+            if ui.button("Create World").clicked() {
+                self.create_world_in(&target_directory(&entry_clone.full_path), settings);
+                ui.close();
+            }
             if ui.button("Import").clicked() {
                 self.import_assets_into(&target_directory(&entry_clone.full_path), settings);
                 ui.close();
@@ -439,6 +475,65 @@ impl ContentBrowserState {
                 ui.close();
             }
         });
+    }
+
+    fn draw_content_preview(
+        &mut self,
+        ui: &mut Ui,
+        entry: &ContentEntry,
+        settings: &EditorSettings,
+        tint: Color32,
+    ) {
+        let preview_size = Vec2::splat(settings.content_icon_size);
+        if let Some(texture) = self.preview_texture(ui, entry) {
+            let frame_rect = ui.allocate_exact_size(preview_size, egui::Sense::hover()).0;
+            ui.painter().rect_filled(
+                frame_rect,
+                6.0,
+                ui.visuals().extreme_bg_color.gamma_multiply(0.6),
+            );
+            let image_bounds = frame_rect.shrink(2.0);
+            let source_size = texture.size_vec2();
+            let fit_scale =
+                (image_bounds.width() / source_size.x).min(image_bounds.height() / source_size.y);
+            let fitted_size = source_size * fit_scale.max(0.0);
+            let image_rect = egui::Rect::from_center_size(image_bounds.center(), fitted_size);
+            ui.painter().image(
+                texture.id(),
+                image_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                tint,
+            );
+            return;
+        }
+
+        let icon = self.icon_for(entry, settings);
+        ui.add(
+            egui::Image::new(icon)
+                .fit_to_exact_size(preview_size)
+                .tint(tint)
+                .sense(egui::Sense::hover()),
+        );
+    }
+
+    fn preview_texture(&mut self, ui: &Ui, entry: &ContentEntry) -> Option<&TextureHandle> {
+        if entry.kind != AssetKind::ImageFile {
+            return None;
+        }
+
+        if !self.image_previews.contains_key(&entry.full_path) {
+            let texture_name = format!(
+                "content_browser_preview_{}",
+                entry.relative_path.replace(['\\', '/', '.', ' '], "_")
+            );
+            if let Ok(texture) =
+                load_texture_from_path(ui.ctx(), &texture_name, &entry.full_path, Some(256))
+            {
+                self.image_previews.insert(entry.full_path.clone(), texture);
+            }
+        }
+
+        self.image_previews.get(&entry.full_path)
     }
 
     fn asset_context_menu(&mut self, ui: &mut Ui, target_dir: PathBuf, settings: &EditorSettings) {
@@ -471,6 +566,10 @@ impl ContentBrowserState {
             self.create_wgsl_shader(&target_dir, settings);
             ui.close();
         }
+        if ui.button("Create World").clicked() {
+            self.create_world_in(&target_dir, settings);
+            ui.close();
+        }
         if ui.button("Import").clicked() {
             self.import_assets_into(&target_dir, settings);
             ui.close();
@@ -500,6 +599,10 @@ impl ContentBrowserState {
             self.create_wgsl_shader(&target_dir, settings);
             ui.close();
         }
+        if ui.button("Create World").clicked() {
+            self.create_world_in(&target_dir, settings);
+            ui.close();
+        }
         if ui.button("Import").clicked() {
             self.import_assets_into(&target_dir, settings);
             ui.close();
@@ -509,6 +612,10 @@ impl ContentBrowserState {
     fn folder_area_context_menu(&mut self, ui: &mut Ui, settings: &EditorSettings) {
         if ui.button("Create Folder").clicked() {
             self.create_folder_in(&self.current_dir.clone(), settings);
+            ui.close();
+        }
+        if ui.button("Create World").clicked() {
+            self.create_world_in(&self.current_dir.clone(), settings);
             ui.close();
         }
         if ui
@@ -532,6 +639,10 @@ impl ContentBrowserState {
     ) {
         if ui.button("Create Folder").clicked() {
             self.create_folder_in(&directory, settings);
+            ui.close();
+        }
+        if ui.button("Create World").clicked() {
+            self.create_world_in(&directory, settings);
             ui.close();
         }
         if ui
@@ -818,6 +929,21 @@ impl ContentBrowserState {
         }
     }
 
+    fn create_world_in(&mut self, target_dir: &Path, settings: &EditorSettings) {
+        let path = unique_world_path(target_dir, "new_world");
+        match runa_project::save_world(&path, &runa_project::create_empty_world()) {
+            Ok(()) => {
+                self.refresh(settings);
+                self.selected_path = Some(path.clone());
+                self.pending_open_world = Some(path.clone());
+                self.last_message = Some(format!("Created world {}.", path.display()));
+            }
+            Err(error) => {
+                self.last_message = Some(format!("Create world failed: {error}"));
+            }
+        }
+    }
+
     fn import_assets_into(&mut self, target_dir: &Path, settings: &EditorSettings) {
         let Some(paths) = FileDialog::new()
             .set_directory(target_dir)
@@ -854,6 +980,20 @@ impl ContentBrowserState {
         self.last_message = Some(format!("Imported {imported} asset(s)."));
     }
 
+    fn open_entry(&mut self, entry: &ContentEntry, settings: &EditorSettings) {
+        if entry.kind == AssetKind::WorldFile {
+            self.pending_open_world = Some(entry.full_path.clone());
+            return;
+        }
+
+        if entry.kind == AssetKind::ImageFile {
+            self.open_with_system_default(&entry.full_path);
+            return;
+        }
+
+        self.edit_file(entry, settings);
+    }
+
     fn edit_file(&mut self, entry: &ContentEntry, settings: &EditorSettings) {
         if entry.is_dir() {
             return;
@@ -884,6 +1024,27 @@ impl ContentBrowserState {
         }
     }
 
+    fn open_with_system_default(&mut self, path: &Path) {
+        let result = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(["/C", "start", "", &path.to_string_lossy()])
+                .spawn()
+        } else if cfg!(target_os = "macos") {
+            Command::new("open").arg(path).spawn()
+        } else {
+            Command::new("xdg-open").arg(path).spawn()
+        };
+
+        match result {
+            Ok(_) => {
+                self.last_message = Some(format!("Opened {}.", path.display()));
+            }
+            Err(error) => {
+                self.last_message = Some(format!("Open failed: {error}"));
+            }
+        }
+    }
+
     fn ensure_icons(&mut self, ctx: &egui::Context) {
         if self.icons.is_some() {
             return;
@@ -899,6 +1060,7 @@ impl ContentBrowserState {
             folder_open: load_editor_icon(ctx, "content_browser_folder_open_icon", "folder-open"),
             file: load_editor_icon(ctx, "content_browser_file_icon", "file"),
             rust_file: load_editor_icon(ctx, "content_browser_rust_file_icon", "rust-file"),
+            world_file: load_editor_icon(ctx, "content_browser_world_file_icon", "world"),
             image_file: load_editor_icon(ctx, "content_browser_image_file_icon", "image"),
             audio_file: load_editor_icon(ctx, "content_browser_audio_file_icon", "audio"),
             shader_file: load_editor_icon(ctx, "content_browser_shader_file_icon", "wgsl"),
@@ -916,6 +1078,7 @@ impl ContentBrowserState {
                 }
             }
             AssetKind::RustFile => &icons.rust_file,
+            AssetKind::WorldFile => &icons.world_file,
             AssetKind::ImageFile => &icons.image_file,
             AssetKind::AudioFile => &icons.audio_file,
             AssetKind::ShaderFile => &icons.shader_file,
@@ -1060,12 +1223,20 @@ fn classify_asset_kind(path: &Path) -> AssetKind {
         .map(|ext| ext.to_ascii_lowercase())
         .as_deref()
     {
+        Some(_) if is_world_file(path) => AssetKind::WorldFile,
         Some("rs") => AssetKind::RustFile,
         Some("png" | "jpg" | "jpeg" | "svg") => AssetKind::ImageFile,
         Some("ogg" | "wav" | "mp3") => AssetKind::AudioFile,
         Some("wgsl") => AssetKind::ShaderFile,
         _ => AssetKind::GenericFile,
     }
+}
+
+fn is_world_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.ends_with(".world.ron"))
+        .unwrap_or(false)
 }
 
 fn is_ignored_path(path: &Path, show_hidden_files: bool) -> bool {
@@ -1103,6 +1274,22 @@ fn unique_file_path(directory: &Path, base_name: &str, extension: &str) -> PathB
             format!("{base_name}.{extension}")
         } else {
             format!("{base_name}{index}.{extension}")
+        };
+        let path = directory.join(file_name);
+        if !path.exists() {
+            return path;
+        }
+        index += 1;
+    }
+}
+
+fn unique_world_path(directory: &Path, base_name: &str) -> PathBuf {
+    let mut index = 0usize;
+    loop {
+        let file_name = if index == 0 {
+            format!("{base_name}.world.ron")
+        } else {
+            format!("{base_name}{index}.world.ron")
         };
         let path = directory.join(file_name);
         if !path.exists() {
