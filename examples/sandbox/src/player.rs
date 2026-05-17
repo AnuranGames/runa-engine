@@ -1,7 +1,7 @@
 use runa_asset::load_image;
 use runa_core::{
     components::{
-        ui::CanvasSpace, ActiveCamera, Camera, CanvasRenderer, Collider2D, SpriteRenderer, Transform,
+        ui::CanvasSpace, ActiveCamera, Camera, UiRenderer, Collider2D, SpriteRenderer, Transform,
     },
     glam::Vec3,
     input_system::*,
@@ -151,7 +151,7 @@ pub fn create_player_camera() -> Object {
         // camera-follow interpolation problems obvious during debugging.
         .with(Camera::new_orthographic(32.0, 18.0))
         .with(ActiveCamera)
-        .with(CanvasRenderer::new(CanvasSpace::Camera))
+        .with(UiRenderer::new(CanvasSpace::Camera))
         .with(PlayerCameraFollow::new())
 }
 

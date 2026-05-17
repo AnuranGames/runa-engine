@@ -10,7 +10,7 @@ use runa_render_api::RenderQueue;
 use crate::{
     audio::{AudioEngine, SoundId},
     components::{
-        ActiveCamera, AudioListener, AudioSource, BackgroundMode, Camera, CanvasRenderer, Collider2D,
+        ActiveCamera, AudioListener, AudioSource, BackgroundMode, Camera, UiRenderer, Collider2D,
         DirectionalLight, MeshRenderer, PointLight, Sorting, SpriteAnimator, SpriteRenderer,
         Tilemap, Transform, WorldAtmosphere,
     },
@@ -321,7 +321,7 @@ impl World {
             };
 
             if let (Some(canvas), Some(viewport_size)) =
-                (object.get_component_mut::<CanvasRenderer>(), viewport_size)
+                (object.get_component_mut::<UiRenderer>(), viewport_size)
             {
                 if canvas.dirty_layout {
                     canvas.layout(viewport_size);
@@ -504,7 +504,7 @@ impl World {
             }
 
             if let (Some(canvas), Some(_camera), Some(_ac)) = (
-                &mut object.get_component::<CanvasRenderer>(),
+                &mut object.get_component::<UiRenderer>(),
                 object.get_component::<Camera>(),
                 object.get_component::<ActiveCamera>(),
             ) {

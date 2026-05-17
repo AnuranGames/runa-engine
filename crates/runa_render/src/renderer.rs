@@ -312,7 +312,7 @@ impl<'window> Renderer<'window> {
         const INITIAL_INSTANCE_CAPACITY: usize = 1000;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instance Buffer"),
-            size: (std::mem::size_of::<InstanceData>() * INITIAL_INSTANCE_CAPACITY) as u64,
+            size: (size_of::<InstanceData>() * INITIAL_INSTANCE_CAPACITY) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -569,7 +569,7 @@ impl<'window> Renderer<'window> {
         let mut sprite_instances: Vec<(i32, f32, usize, usize, InstanceData)> = Vec::new();
         let mut mesh_items: Vec<(i32, f32, usize)> = Vec::new();
         let mut ui_vertices = Vec::new();
-        let mut ui_text_vertices = Vec::new();
+        let mut ui_text_vertices_map: std::collections::HashMap<usize, Vec<UITexturedVertex>> = std::collections::HashMap::new();
         let has_lighting = !queue.directional_lights.is_empty() || !queue.point_lights.is_empty();
         let directional = queue.directional_lights.first().copied();
         let mut point_lights = [PointLightUniform::default(); MAX_POINT_LIGHTS];
@@ -698,8 +698,9 @@ impl<'window> Renderer<'window> {
                     size,
                 } => {
                     let (char_width, char_height) = self.font_manager.char_size();
-                    let char_w = *size * char_width as f32;
-                    let char_h = *size * char_height as f32;
+                    let scale = *size / self.font_manager.base_font_size();
+                    let char_w = char_width as f32 * scale;
+                    let char_h = char_height as f32 * scale;
                     let mut x = position.x;
                     let y = position.y;
 
@@ -715,118 +716,234 @@ impl<'window> Renderer<'window> {
                             let right = x + char_w;
                             let bottom = y + char_h;
 
-                            ui_text_vertices.extend_from_slice(&[
-                                UITexturedVertex {
-                                    position: [left, top],
-                                    tex_coords: [char_uv.u, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, top],
-                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [left, bottom],
-                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [left, bottom],
-                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, top],
-                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, bottom],
-                                    tex_coords: [
-                                        char_uv.u + char_uv.u_width,
-                                        char_uv.v + char_uv.v_height,
-                                    ],
-                                    color: *color,
-                                },
-                            ]);
+                            if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
+                                                        let atlas_key = Arc::as_ptr(atlas_tex) as usize;
+                                let entry = ui_text_vertices_map.entry(atlas_key).or_insert_with(Vec::new);
+                                entry.extend_from_slice(&[
+                                    UITexturedVertex {
+                                        position: [left, top],
+                                        tex_coords: [char_uv.u, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, top],
+                                        tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [left, bottom],
+                                        tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [left, bottom],
+                                        tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, top],
+                                        tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, bottom],
+                                        tex_coords: [
+                                            char_uv.u + char_uv.u_width,
+                                            char_uv.v + char_uv.v_height,
+                                        ],
+                                        color: *color,
+                                    },
+                                ]);
+                            }
                         }
 
-                        x += char_w;
+                        x += self
+                            .font_manager
+                            .get_char_advance(ch)
+                            .unwrap_or(char_width as f32)
+                            * scale;
                     }
                 }
-                RenderCommands::UiRect {
-                    rect,
-                    color,
-                    z_index,
-                } => {}
+                RenderCommands::UiRect { rect, color, z_index } => {
+                    let left = rect.x - rect.w / 2.0;
+                    let top = rect.y - rect.h / 2.0;
+                    let right = left + rect.w;
+                    let bottom = top + rect.h;
+
+                    ui_vertices.extend_from_slice(&[
+                        UIVertex {
+                            position: [left, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [left, bottom],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [left, bottom],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, top],
+                            color: *color,
+                        },
+                        UIVertex {
+                            position: [right, bottom],
+                            color: *color,
+                        },
+                    ]);
+                }
                 RenderCommands::UiImage {
                     texture,
                     rect,
                     tint,
                     uv_rect,
-                    z_index,
-                } => {}
+                    z_index } =>
+                {
+                    let key = Arc::as_ptr(texture) as usize;
+                    if !self.textures_cache.contains_key(&key) {
+                        self.textures_cache.insert(key, texture.clone());
+                    }
+
+                    // Normalize UVs if caller supplied pixel-based UVs (>1.0)
+                    let mut uv_n = *uv_rect;
+                    if uv_n[0] > 1.0 || uv_n[1] > 1.0 || uv_n[2] > 1.0 || uv_n[3] > 1.0 {
+                        uv_n = [
+                            uv_rect[0] / texture.width as f32,
+                            uv_rect[1] / texture.height as f32,
+                            uv_rect[2] / texture.width as f32,
+                            uv_rect[3] / texture.height as f32,
+                        ];
+                    }
+
+                    let left = rect.x - rect.w / 2.0;
+                    let top = rect.y - rect.h / 2.0;
+                    let right = left + rect.w;
+                    let bottom = top + rect.h;
+
+                    // Add textured vertices for this image using normalized UVs
+                    // For regular textures (not font atlas) flip V coordinate because texture assets are top-left origin
+                    let entry = ui_text_vertices_map.entry(key).or_insert_with(Vec::new);
+                    let u0 = uv_n[0];
+                    let v0 = uv_n[1];
+                    let uw = uv_n[2];
+                    let vh = uv_n[3];
+                    // Use UVs as provided for assets (no vertical flip)
+                    let v_top = v0;
+                    let v_bottom = v0 + vh;
+
+                    entry.extend_from_slice(&[
+                        UITexturedVertex {
+                            position: [left, top],
+                            tex_coords: [u0, v_top],
+                            color: *tint,
+                        },
+                        UITexturedVertex {
+                            position: [right, top],
+                            tex_coords: [u0 + uw, v_top],
+                            color: *tint,
+                        },
+                        UITexturedVertex {
+                            position: [left, bottom],
+                            tex_coords: [u0, v_bottom],
+                            color: *tint,
+                        },
+                        UITexturedVertex {
+                            position: [left, bottom],
+                            tex_coords: [u0, v_bottom],
+                            color: *tint,
+                        },
+                        UITexturedVertex {
+                            position: [right, top],
+                            tex_coords: [u0 + uw, v_top],
+                            color: *tint,
+                        },
+                        UITexturedVertex {
+                            position: [right, bottom],
+                            tex_coords: [u0 + uw, v_bottom],
+                            color: *tint,
+                        },
+                    ]);
+                }
                 RenderCommands::UiText {
                     text,
                     rect,
                     color,
                     font_size,
-                    z_index,
+                    z_index: _,
                 } => {
-                    let (char_width, char_height) = self.font_manager.char_size();
-                    let char_w = rect.w * char_width as f32;
-                    let char_h = rect.h * char_height as f32;
+                    let scale = *font_size as f32 / self.font_manager.base_font_size();
+                    let (char_width, _) = self.font_manager.char_size();
+                    let char_h = self.font_manager.line_height() * scale;
                     let mut x = rect.x;
-                    let y = rect.y;
+                    let y = if rect.h > char_h {
+                        rect.y + (rect.h - char_h) * 0.5
+                    } else {
+                        rect.y
+                    };
 
                     for ch in text.chars() {
+                        let char_w = self
+                            .font_manager
+                            .get_char_advance(ch)
+                            .unwrap_or(char_width as f32)
+                            * scale;
+
                         if ch == ' ' {
                             x += char_w;
                             continue;
                         }
 
-                        if let Some(char_uv) = self.font_manager.get_char_uv(ch) {
-                            let left = x;
-                            let top = y;
-                            let right = x + char_w;
-                            let bottom = y + char_h;
+                        if let Some(glyph_info) = self.font_manager.get_glyph_info(ch) {
+                            let char_uv = glyph_info.uv;
+                            let left = x + char_uv.bearing_x * scale;
+                            let top = y + char_uv.bearing_y * scale;
+                            let right = left + char_uv.width * scale;
+                            let bottom = top + char_uv.height * scale;
 
-                            ui_text_vertices.extend_from_slice(&[
-                                UITexturedVertex {
-                                    position: [left, top],
-                                    tex_coords: [char_uv.u, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, top],
-                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [left, bottom],
-                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [left, bottom],
-                                    tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, top],
-                                    tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
-                                    color: *color,
-                                },
-                                UITexturedVertex {
-                                    position: [right, bottom],
-                                    tex_coords: [
-                                        char_uv.u + char_uv.u_width,
-                                        char_uv.v + char_uv.v_height,
-                                    ],
-                                    color: *color,
-                                },
-                            ]);
+                            if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
+                                                        let atlas_key = Arc::as_ptr(atlas_tex) as usize;
+                                let entry = ui_text_vertices_map.entry(atlas_key).or_insert_with(Vec::new);
+                                entry.extend_from_slice(&[
+                                    UITexturedVertex {
+                                        position: [left, top],
+                                        tex_coords: [char_uv.u, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, top],
+                                        tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [left, bottom],
+                                        tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [left, bottom],
+                                        tex_coords: [char_uv.u, char_uv.v + char_uv.v_height],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, top],
+                                        tex_coords: [char_uv.u + char_uv.u_width, char_uv.v],
+                                        color: *color,
+                                    },
+                                    UITexturedVertex {
+                                        position: [right, bottom],
+                                        tex_coords: [
+                                            char_uv.u + char_uv.u_width,
+                                            char_uv.v + char_uv.v_height,
+                                        ],
+                                        color: *color,
+                                    },
+                                ]);
+                            }
                         }
 
                         x += char_w;
@@ -856,7 +973,7 @@ impl<'window> Renderer<'window> {
             let new_capacity = (all_instances.len() * 3 / 2).max(1000);
             self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Instance Buffer"),
-                size: (std::mem::size_of::<InstanceData>() * new_capacity) as u64,
+                size: (size_of::<InstanceData>() * new_capacity) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -973,7 +1090,7 @@ impl<'window> Renderer<'window> {
 
                 let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("Mesh Vertex Buffer"),
-                    size: (vertices.len() * std::mem::size_of::<runa_render_api::Vertex3D>())
+                    size: (vertices.len() * size_of::<runa_render_api::Vertex3D>())
                         as u64,
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
@@ -1047,7 +1164,7 @@ impl<'window> Renderer<'window> {
         if !ui_vertices.is_empty() {
             let ui_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("UI Vertex Buffer"),
-                size: (std::mem::size_of::<UIVertex>() * ui_vertices.len()) as u64,
+                size: (size_of::<UIVertex>() * ui_vertices.len()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -1060,21 +1177,45 @@ impl<'window> Renderer<'window> {
             rpass.draw(0..ui_vertices.len() as u32, 0..1);
         }
 
-        if !ui_text_vertices.is_empty() {
-            let ui_text_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("UI Text Vertex Buffer"),
-                size: (std::mem::size_of::<UITexturedVertex>() * ui_text_vertices.len()) as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.queue.write_buffer(
-                &ui_text_vertex_buffer,
-                0,
-                bytemuck::cast_slice(&ui_text_vertices),
-            );
+        if !ui_text_vertices_map.is_empty() {
+            for (tex_key, vertices) in ui_text_vertices_map.drain() {
+                let ui_text_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("UI Textured Vertex Buffer"),
+                    size: (size_of::<UITexturedVertex>() * vertices.len()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.queue.write_buffer(
+                    &ui_text_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&vertices),
+                );
 
-            if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
-                let text_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                // Resolve GPU texture for this key (font atlas or regular texture)
+                let gpu_texture: Arc<GpuTexture> = if let Some(atlas_tex) = self.font_manager.get_atlas_texture() {
+                    if Arc::as_ptr(atlas_tex) as usize == tex_key {
+                        // Use font atlas GPU texture directly
+                        atlas_tex.clone()
+                    } else {
+                        // Regular texture asset
+                        if !self.textures.contains_key(&tex_key) {
+                            let texture_asset = self.textures_cache.get(&tex_key).unwrap().clone();
+                            let gpu_tex = Arc::new(GpuTexture::from_asset(&self.device, &self.queue, &texture_asset));
+                            self.textures.insert(tex_key, gpu_tex);
+                        }
+                        self.textures.get(&tex_key).unwrap().clone()
+                    }
+                } else {
+                    // No atlas available, must be regular texture
+                    if !self.textures.contains_key(&tex_key) {
+                        let texture_asset = self.textures_cache.get(&tex_key).unwrap().clone();
+                        let gpu_tex = Arc::new(GpuTexture::from_asset(&self.device, &self.queue, &texture_asset));
+                        self.textures.insert(tex_key, gpu_tex);
+                    }
+                    self.textures.get(&tex_key).unwrap().clone()
+                };
+
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.ui_pipeline.textured_bind_group_layout,
                     entries: &[
                         wgpu::BindGroupEntry {
@@ -1083,20 +1224,20 @@ impl<'window> Renderer<'window> {
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
-                            resource: wgpu::BindingResource::TextureView(&atlas_tex.view),
+                            resource: wgpu::BindingResource::TextureView(&gpu_texture.view),
                         },
                         wgpu::BindGroupEntry {
                             binding: 2,
                             resource: wgpu::BindingResource::Sampler(&self.nearest_sampler),
                         },
                     ],
-                    label: Some("Text Bind Group"),
+                    label: Some("UI Textured Bind Group"),
                 });
 
                 rpass.set_pipeline(&self.ui_pipeline.textured_pipeline);
-                rpass.set_bind_group(0, &text_bind_group, &[]);
+                rpass.set_bind_group(0, &bind_group, &[]);
                 rpass.set_vertex_buffer(0, ui_text_vertex_buffer.slice(..));
-                rpass.draw(0..ui_text_vertices.len() as u32, 0..1);
+                rpass.draw(0..vertices.len() as u32, 0..1);
             }
         }
     }
@@ -1126,7 +1267,7 @@ impl<'window> Renderer<'window> {
             }],
         });
 
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut r_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Background Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target_view,
@@ -1141,9 +1282,9 @@ impl<'window> Renderer<'window> {
             ..Default::default()
         });
 
-        rpass.set_pipeline(&self.background_pipeline.pipeline);
-        rpass.set_bind_group(0, &bind_group, &[]);
-        rpass.draw(0..3, 0..1);
+        r_pass.set_pipeline(&self.background_pipeline.pipeline);
+        r_pass.set_bind_group(0, &bind_group, &[]);
+        r_pass.draw(0..3, 0..1);
     }
 
     fn build_render_target(

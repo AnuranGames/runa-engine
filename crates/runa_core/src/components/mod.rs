@@ -49,7 +49,7 @@ pub use world_atmosphere::{BackgroundMode, WorldAtmosphere};
 pub use mesh_renderer::Vertex3D;
 pub use mesh_renderer::AlphaMode;
 
-pub use ui::CanvasRenderer;
+pub use ui::UiRenderer;
 
 macro_rules! impl_component {
     ($($ty:ty),+ $(,)?) => {
@@ -85,5 +85,5 @@ impl_component!(
     Tilemap,
     TilemapRenderer,
     Transform,
-    CanvasRenderer,
+    UiRenderer,
 );

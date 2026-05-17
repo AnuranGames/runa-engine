@@ -156,6 +156,17 @@ pub struct ImageProps {
     pub uv: [f32; 4],
 }
 
-pub enum TextAlign {}
+#[derive(Clone, Copy, Debug)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        TextAlign::Left
+    }
+}
 
 pub struct FontId {}

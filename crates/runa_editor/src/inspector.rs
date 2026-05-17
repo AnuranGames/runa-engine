@@ -9,7 +9,7 @@ use rfd::FileDialog;
 use runa_asset::loader::load_image;
 use runa_asset::AudioAsset;
 use runa_core::components::{
-    ActiveCamera, AudioListener, AudioSource, BuiltinMeshPrimitive, Camera, CanvasRenderer, Collider2D,
+    ActiveCamera, AudioListener, AudioSource, BuiltinMeshPrimitive, Camera, UiRenderer, Collider2D,
     ComponentRuntimeKind, CursorInteractable, DirectionalLight, MeshRenderer, PhysicsCollision,
     PointLight, ProjectionType, SerializedField, SerializedFieldValue, SerializedTypeKind,
     SerializedTypeStorage, Sorting, SpriteAnimationClip, SpriteAnimator, SpriteRenderer, Tilemap,
@@ -1956,7 +1956,7 @@ fn component_icon_name(type_id: TypeId, kind: ComponentRuntimeKind) -> &'static 
         "c-PhysicsCollision"
     } else if type_id == TypeId::of::<CursorInteractable>() {
         "c-CursorInteractable"
-    } else if type_id == TypeId::of::<CanvasRenderer>() {
+    } else if type_id == TypeId::of::<UiRenderer>() {
         "c-Canvas"
     } else if type_id == TypeId::of::<MeshRenderer>() {
         "c-MeshRenderer"

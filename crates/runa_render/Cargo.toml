@@ -8,6 +8,7 @@ authors.workspace = true
 [dependencies]
 runa_asset = { path = "../runa_asset" }
 runa_render_api = { path = "../runa_render_api" }
+rusttype = "0.9"
 
 winit.workspace = true
 pollster.workspace = true

@@ -71,7 +71,24 @@ fn vs_textured_main(vertex: TexturedVertexInput) -> TexturedVertexOutput {
 @fragment
 fn fs_textured_main(in: TexturedVertexOutput) -> @location(0) vec4<f32> {
     let texture_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
-    // Use red channel as alpha mask (font textures are grayscale)
-    let alpha = texture_color.r * in.color.a;
-    return vec4<f32>(in.color.rgb, alpha);
+
+    // Heuristic: if texture has meaningful alpha, treat as regular RGBA image.
+    // Otherwise fall back to using red channel as mask (font atlas grayscale).
+    let alpha_from_tex = texture_color.a;
+    let mask = texture_color.r;
+
+    var out_rgb: vec3<f32>;
+    var out_a: f32;
+
+    if (alpha_from_tex > 0.001) {
+        // Regular textured image: modulate RGB and multiply alpha
+        out_rgb = texture_color.rgb * in.color.rgb;
+        out_a = alpha_from_tex * in.color.a;
+    } else {
+        // Likely a font atlas stored in single channel: use mask as alpha and vertex color as rgb
+        out_rgb = in.color.rgb;
+        out_a = mask * in.color.a;
+    }
+
+    return vec4<f32>(out_rgb, out_a);
 }

@@ -14,6 +14,7 @@ members = [
     "examples/sandbox",
     "examples/sandbox_soundtest",
     "examples/sandbox_3d",
+    "examples/sandbox_ui",
 ]
 resolver = "2"
 
